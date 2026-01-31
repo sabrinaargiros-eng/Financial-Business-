@@ -1,0 +1,16 @@
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Dependency directories
+node_modules/
+
+# Local Storage backups or specific user data (if we had any external DB files)
+# For now keeping everything as it's a simple web app
