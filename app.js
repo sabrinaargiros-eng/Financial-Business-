@@ -47,13 +47,20 @@ function initSync() {
 }
 
 function updateLocalState(key, val) {
-    if (key === 'products') products = val;
-    if (key === 'team') team = val;
-    if (key === 'subs') subs = val;
-    if (key === 'credits') credits = val;
-    if (key === 'transactions') transactions = val;
-    if (key === 'inventoryHistory') inventoryHistory = val;
-    if (key === 'teamTransactions') teamTransactions = val;
+    // Firebase helps by turning arrays into objects sometimes. Let's fix that.
+    let finalVal = val;
+    const arrayKeys = ['products', 'team', 'subs', 'credits', 'transactions', 'inventoryHistory', 'teamTransactions'];
+    if (arrayKeys.includes(key) && val && typeof val === 'object' && !Array.isArray(val)) {
+        finalVal = Object.values(val);
+    }
+
+    if (key === 'products') products = finalVal;
+    if (key === 'team') team = finalVal;
+    if (key === 'subs') subs = finalVal;
+    if (key === 'credits') credits = finalVal;
+    if (key === 'transactions') transactions = finalVal;
+    if (key === 'inventoryHistory') inventoryHistory = finalVal;
+    if (key === 'teamTransactions') teamTransactions = finalVal;
 
     // Trigger UI updates based on current view
     const activeView = document.querySelector('.view-section.active');
@@ -62,7 +69,7 @@ function updateLocalState(key, val) {
     if (activeView.id === 'view-home') renderDashboard();
     if (activeView.id === 'view-inventory') renderInventory();
     if (activeView.id === 'view-team') renderTeam();
-    if (activeView.id === 'view-subs') renderSubs();
+    if (activeView.id === 'view-subs') toggleSubsView('active');
     if (activeView.id === 'view-credits') renderCredits();
 }
 
@@ -163,8 +170,7 @@ if (teamTransactions.length === 0) {
 transactions = transactions.map(t => ({ ...t, id: t.id || Math.random().toString(36).substr(2, 9) }));
 DB.set('transactions', transactions);
 
-// Start Cloud Sync after all state is initialized
-initSync();
+
 
 // --- NAVIGATION ---
 function switchTab(tabName) {
@@ -209,10 +215,11 @@ function renderInventory() {
     if (!list) return;
     list.innerHTML = '';
 
-    const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const historyArray = Array.isArray(inventoryHistory) ? inventoryHistory : Object.values(inventoryHistory || {});
+    const sortedHistory = [...historyArray].sort((a, b) => new Date(b.date) - new Date(a.date));
     const latestEntry = sortedHistory.find(h => !h.paused) || sortedHistory[0];
 
-    if (latestEntry) {
+    if (latestEntry && latestEntry.products) {
         const dateStr = new Date(latestEntry.date).toLocaleDateString();
         const summaryDiv = document.createElement('div');
         summaryDiv.className = 'glass-card';
@@ -224,7 +231,7 @@ function renderInventory() {
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
                     ${latestEntry.products.map(p => {
             const icon = getProductIcon(p.id);
-            const masterProduct = products.find(mp => mp.id === p.id);
+            const masterProduct = (Array.isArray(products) ? products : []).find(mp => mp.id === p.id);
             const name = masterProduct ? masterProduct.name : (p.name || 'Prodotto');
             const stock = p.end !== undefined ? p.end : (p.start + p.restock - p.sales);
             return `
@@ -251,10 +258,11 @@ function renderInventory() {
     // Auto-create entry for Today if missing
     if (isToday && !entry) {
         let previousEndValues = {};
-        const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const historyArray = Array.isArray(inventoryHistory) ? inventoryHistory : Object.values(inventoryHistory || {});
+        const sortedHistory = [...historyArray].sort((a, b) => new Date(b.date) - new Date(a.date));
         const lastEntry = sortedHistory.find(h => h.date < currentInventoryDate);
 
-        if (lastEntry) {
+        if (lastEntry && Array.isArray(lastEntry.products)) {
             lastEntry.products.forEach(p => previousEndValues[p.id] = p.end);
         } else {
             INITIAL_PRODUCTS.forEach(p => previousEndValues[p.id] = p.start);
@@ -262,7 +270,7 @@ function renderInventory() {
 
         entry = {
             date: currentInventoryDate,
-            products: products.map(p => {
+            products: (Array.isArray(products) ? products : INITIAL_PRODUCTS).map(p => {
                 const startVal = previousEndValues[p.id] !== undefined ? previousEndValues[p.id] : p.start;
                 return {
                     id: p.id, name: p.name, start: startVal, restock: 0, end: startVal, sales: 0
@@ -1855,6 +1863,7 @@ function openProfitCalculator() {
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
     switchTab('home');
+    initSync();
 
     // Add Calculator Button
     const btnCalc = document.createElement('button');
