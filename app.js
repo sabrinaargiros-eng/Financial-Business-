@@ -56,10 +56,10 @@ function initSync() {
 
                 // If localVal is null (first run ever), we use the variables which are initialized with defaults
                 if (!dataToPush || (Array.isArray(dataToPush) && dataToPush.length === 0)) {
-                    if (key === 'products') dataToPush = products;
-                    if (key === 'team') dataToPush = team;
-                    if (key === 'subs') dataToPush = subs;
-                    if (key === 'credits') dataToPush = credits;
+                    if (key === 'products') dataToPush = INITIAL_PRODUCTS;
+                    if (key === 'team') dataToPush = INITIAL_TEAM;
+                    if (key === 'subs') dataToPush = INITIAL_SUBS;
+                    if (key === 'credits') dataToPush = INITIAL_CREDITS;
                 }
 
                 if (dataToPush && (Array.isArray(dataToPush) ? dataToPush.length > 0 : true)) {
@@ -76,6 +76,11 @@ function initSync() {
             console.log(`Cloud update for ${key} received.`);
             localStorage.setItem(key, JSON.stringify(val));
             updateLocalState(key, val);
+        }, (error) => {
+            console.error(`Firebase Sync Error for ${key}:`, error);
+            if (error.message.includes('permission_denied') || error.code === 'PERMISSION_DENIED') {
+                console.warn("PERMESSI NEGATI: Assicurati di aver impostato 'Modalità Test' nelle Regole del Database su Firebase.");
+            }
         });
     });
 }
@@ -151,7 +156,13 @@ function updateSyncStatus(connected) {
     const dot = document.getElementById('sync-indicator');
     if (dot) {
         dot.style.background = connected ? 'var(--color-profit)' : 'var(--color-expense)';
-        dot.title = connected ? 'Sincronizzato' : 'Offline';
+        dot.title = connected ? 'Sincronizzato' : 'Offline o Errore Configurazione';
+        dot.style.boxShadow = connected ? '0 0 8px var(--color-profit)' : '0 0 8px var(--color-expense)';
+    }
+
+    // Inform user if it remains red
+    if (!connected) {
+        console.log("Tentativo di connessione...");
     }
 }
 
