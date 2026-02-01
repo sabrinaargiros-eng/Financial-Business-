@@ -6,7 +6,7 @@ const firebaseConfig = {
     storageBucket: "snackstock-app.firebasestorage.app",
     messagingSenderId: "544360978481",
     appId: "1:544360978481:web:32714ef242d77518bb9d10",
-    databaseURL: "https://snackstock-app-default-rtdb.europe-west1.firebasedatabase.app/" // Derived from project ID
+    databaseURL: "https://snackstock-app-default-rtdb.firebaseio.com/" // Corrected based on console link
 };
 
 // Initialize Firebase (Compat Mode)
