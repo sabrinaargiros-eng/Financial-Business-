@@ -35,12 +35,21 @@ const INITIAL_CREDITS = [
 ];
 
 const PRODUCT_COLORS = {
-    'patatina': '#FFD700',
-    'pan_goccole': '#DAA520',
-    'crostatina_ciocco': '#8B4513',
-    'crostatina_albicocca': '#FF69B4'
+    'crostatina_ciocco': '#7B3F00',   /* Chocolate Brown */
+    'crostatina_albicocca': '#FF8C00', /* Dark Orange */
+    'pan_goccole': '#A0522D',          /* Sienna/Cookie */
+    'patatina': '#F1C40F',             /* Sun Yellow */
+    'sweet': '#FFD700',
+    'chip': '#FFD700'
 };
-const COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0']; // Fallback
+const COLORS = ['#FFD700', '#FF4D4D', '#2ECC71', '#3498DB', '#9B59B6'];
+
+// --- UTILITIES ---
+function hapticFeedback() {
+    if (window.navigator.vibrate) {
+        window.navigator.vibrate(15);
+    }
+}
 
 // --- APP STATE ---
 let products = DB.get('products', INITIAL_PRODUCTS);
@@ -86,11 +95,14 @@ DB.set('transactions', transactions);
 
 // --- NAVIGATION ---
 function switchTab(tabName) {
-    // Update Nav UI
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    // Find the clicked element based on simple logic (not robust but works for fixed tabs)
-    const index = ['home', 'inventory', 'team', 'subs', 'credits'].indexOf(tabName);
-    document.querySelectorAll('.nav-item')[index].classList.add('active');
+    // Find the clicked element based on simple logic
+    const tabs = ['home', 'inventory', 'team', 'subs', 'credits'];
+    const index = tabs.indexOf(tabName);
+    const navItems = document.querySelectorAll('.nav-item');
+    if (navItems[index]) {
+        navItems.forEach(el => el.classList.remove('active'));
+        navItems[index].classList.add('active');
+    }
 
     // Update View
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
@@ -121,44 +133,40 @@ function loadInventoryDate(date) {
 
 function renderInventory() {
     const list = document.getElementById('inventory-list');
+    if (!list) return;
     list.innerHTML = '';
 
-    // --- NEW: Sticky Current Stock Widget ---
-    // Find the latest chronological entry that is NOT PAUSED to show reliable "Real Time" stock
     const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
-    // Find first non-paused entry
-    const latestEntry = sortedHistory.find(h => !h.paused) || sortedHistory[0]; // Fallback to latest if all paused (unlikely)
+    const latestEntry = sortedHistory.find(h => !h.paused) || sortedHistory[0];
 
     if (latestEntry) {
-        const dateObj = new Date(latestEntry.date);
-        const dateStr = dateObj.toLocaleDateString();
-        // Check if this entry is older than today to warn user? Maybe not needed.
-
+        const dateStr = new Date(latestEntry.date).toLocaleDateString();
         const summaryDiv = document.createElement('div');
         summaryDiv.className = 'glass-card';
-        summaryDiv.style.marginBottom = '20px';
-        summaryDiv.style.border = '1px solid var(--color-profit)'; // Highlight
-        summaryDiv.innerHTML = `<h3 style="text-align: center; margin-bottom: 10px;">📦 Scorte Attuali (Del ${dateStr})</h3>`;
-
-        const grid = document.createElement('div');
-        grid.style.display = 'grid';
-        grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
-        grid.style.gap = '10px';
-
-        latestEntry.products.forEach(p => {
-            const item = document.createElement('div');
-            item.style.textAlign = 'center';
-            item.innerHTML = `
-                <span style="font-size: 1.2rem;">${getProductIcon(p.id)}</span> ${p.name}
-                <div style="font-weight: bold; font-size: 1.1rem; color: var(--color-income);">${p.end}</div>
-            `;
-            grid.appendChild(item);
-        });
-        summaryDiv.appendChild(grid);
+        summaryDiv.style.border = '1px solid var(--color-profit)';
+        summaryDiv.innerHTML = `
+            <div style="text-align: center;">
+                <small style="color: var(--color-profit); font-weight: 800; font-size: 0.7rem; text-transform: uppercase;">Real-Time Stock</small>
+                <div style="font-size: 0.8rem; opacity: 0.6; margin-bottom: 12px;">Aggiornato al ${dateStr}</div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                    ${latestEntry.products.map(p => {
+            const icon = getProductIcon(p.id);
+            const masterProduct = products.find(mp => mp.id === p.id);
+            const name = masterProduct ? masterProduct.name : (p.name || 'Prodotto');
+            const stock = p.end !== undefined ? p.end : (p.start + p.restock - p.sales);
+            return `
+                            <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 12px; border: 1px solid var(--border-glass);">
+                                <div style="font-size: 1.2rem;">${icon}</div>
+                                <div style="font-weight: 800; font-size: 1.1rem;">${stock}</div>
+                                <small style="font-size: 0.65rem; opacity: 0.7; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">${name}</small>
+                            </div>
+                        `;
+        }).join('')}
+                </div>
+            </div>
+        `;
         list.appendChild(summaryDiv);
     }
-    // ----------------------------------------
-
     // Set date picker value to match current state
     const picker = document.getElementById('inventory-date-picker');
     if (picker) picker.value = currentInventoryDate;
@@ -169,7 +177,6 @@ function renderInventory() {
 
     // Auto-create entry for Today if missing
     if (isToday && !entry) {
-        // Sync Logic: Get latest end from strictly text-sorted previous history
         let previousEndValues = {};
         const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
         const lastEntry = sortedHistory.find(h => h.date < currentInventoryDate);
@@ -193,70 +200,51 @@ function renderInventory() {
         DB.set('inventoryHistory', inventoryHistory);
     }
 
-    // Prepare Display Data
-    let displayProducts = [];
-    if (entry) {
-        displayProducts = entry.products.map(p => ({ ...p, icon: getProductIcon(p.id) }));
-    } else {
-        // Fallback for past dates (Virtual View - Read Only or Create on Interaction?)
-        // If we are viewing a past date that doesn't exist, we probably shouldn't CREATE it until user edits.
-        // But for consistency let's show virtual data based on previous day.
-        const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
-        const prevEntry = sortedHistory.find(h => h.date < currentInventoryDate);
-
-        displayProducts = products.map(p => {
-            let startVal = 0;
-            if (prevEntry) {
-                const prevP = prevEntry.products.find(hp => hp.id === p.id);
-                if (prevP) startVal = prevP.end;
-            } else {
-                // If absolutely no history before this date, use Initial default
-                const initP = INITIAL_PRODUCTS.find(ip => ip.id === p.id);
-                if (initP) startVal = initP.start;
-            }
-            return {
-                id: p.id, name: p.name, icon: getProductIcon(p.id),
-                start: startVal, restock: 0, end: startVal, sales: 0
-            };
-        });
+    if (!entry) {
+        const noDataDiv = document.createElement('div');
+        noDataDiv.className = 'glass-card';
+        noDataDiv.style.textAlign = 'center';
+        noDataDiv.innerHTML = `<p>Nessun dato per questa data.</p>`;
+        list.appendChild(noDataDiv);
+        return;
     }
 
-    displayProducts.forEach(p => {
-        // Calculate Sales
-        const sales = (p.start + p.restock) - p.end;
-
-        // Input Controls
-        const restockInput = `<input type="number"
-            value="${p.restock}"
-            style="width: 40px; text-align: center; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px;"
-            onchange="updateHistoryItem('${p.id}', 'restock', this.value)">`;
-
-        const startInput = `<input type="number" 
-            value="${p.start}" 
-            style="width: 40px; text-align: center; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px;" 
-            onchange="updateHistoryItem('${p.id}', 'start', this.value)">`;
-
-        const endInput = `<input type="number"
-            value="${p.end}"
-            min="0"
-            style="width: 50px; text-align: center; border-radius: 5px; border: 1px solid #555; background: #222; color: #fff;"
-            onchange="updateHistoryItem('${p.id}', 'end', this.value)">`;
-
-
+    entry.products.forEach(p => {
+        const icon = getProductIcon(p.id);
         const card = document.createElement('div');
         card.className = 'glass-card';
+        card.style.padding = '16px';
+
+        // UI Layout with Inputs
         card.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3>${p.icon || '📦'} ${p.name}</h3>
-                ${p.end < 5 ? '<span style="color: var(--color-expense);">⚠</span>' : ''}
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="font-size: 1.5rem;">${icon}</div>
+                    <div style="font-weight: 800; font-size: 1rem;">${p.name}</div>
+                </div>
+                <div style="text-align: right;">
+                    <small style="color: var(--text-secondary); font-size: 0.65rem; font-weight: 700;">VENDITE</small>
+                    <div style="font-weight: 900; font-size: 1.2rem; color: var(--color-expense);">${p.sales}</div>
+                </div>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px; text-align: center; font-size: 0.8rem;">
-                <div>Inizio<br>${startInput}</div>
-                <div>Riforn.<br>${restockInput}</div>
-                <div>Vendite<br><b>${sales}</b></div>
-                <div style="color: var(--color-income)">
-                    Rimanenza<br>
-                    ${endInput}
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
+                <div class="glass-card" style="padding: 8px; min-height: auto; background: rgba(255,255,255,0.02);">
+                    <small style="font-size: 0.6rem; opacity: 0.6; display: block;">INIZIO</small>
+                    <input type="number" value="${p.start}" class="form-input" 
+                        style="width: 100%; border: none; background: transparent; text-align: center; font-weight: 800; padding: 4px; margin: 0; min-height: auto;"
+                        onchange="hapticFeedback(); updateHistoryItem('${p.id}', 'start', this.value)">
+                </div>
+                <div class="glass-card" style="padding: 8px; min-height: auto; background: rgba(255,255,255,0.02); border-color: rgba(46, 204, 113, 0.2);">
+                    <small style="font-size: 0.6rem; color: var(--color-income); font-weight: 700; display: block;">CARICO</small>
+                    <input type="number" value="${p.restock}" class="form-input" 
+                        style="width: 100%; border: none; background: transparent; text-align: center; font-weight: 800; color: var(--color-income); padding: 4px; margin: 0; min-height: auto;"
+                        onchange="hapticFeedback(); updateHistoryItem('${p.id}', 'restock', this.value)">
+                </div>
+                <div class="glass-card" style="padding: 8px; min-height: auto; background: rgba(255,255,255,0.02); border-color: rgba(255, 215, 0, 0.2);">
+                    <small style="font-size: 0.6rem; color: var(--color-profit); font-weight: 700; display: block;">FINE</small>
+                    <input type="number" value="${p.end}" class="form-input" 
+                        style="width: 100%; border: none; background: transparent; text-align: center; font-weight: 800; color: var(--color-profit); padding: 4px; margin: 0; min-height: auto;"
+                        onchange="hapticFeedback(); updateHistoryItem('${p.id}', 'end', this.value)">
                 </div>
             </div>
         `;
@@ -267,7 +255,13 @@ function renderInventory() {
     const chartDiv = document.createElement('div');
     chartDiv.className = 'glass-card';
     chartDiv.style.marginTop = '20px';
-    chartDiv.innerHTML = `<h2 style="text-align: center;">Andamento Vendite</h2><canvas id="inventoryChartCanvas"></canvas>`;
+    chartDiv.style.paddingBottom = '20px'; // Add some padding at the bottom
+    chartDiv.innerHTML = `
+        <h2 style="text-align: center; margin-bottom: 15px;">Andamento Vendite</h2>
+        <div style="height: 250px; position: relative;">
+            <canvas id="inventoryChartCanvas"></canvas>
+        </div>
+    `;
     list.appendChild(chartDiv);
 
     renderInventoryChart();
@@ -524,12 +518,15 @@ function renderInventoryChart() {
         const color = PRODUCT_COLORS[prod.id] || COLORS[index % COLORS.length];
 
         return {
-            label: prod.name,
+            label: prod.icon, // Use icons only as requested
             data: data,
             borderColor: color,
             backgroundColor: color,
-            tension: 0.3,
-            fill: false
+            tension: 0.4,
+            fill: false,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            borderWidth: 2
         };
     });
 
@@ -541,9 +538,40 @@ function renderInventoryChart() {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    align: 'center',
+                    labels: {
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        padding: 15,
+                        font: {
+                            size: 12,
+                            weight: '600'
+                        },
+                        color: '#94A3B8'
+                    }
+                },
+                tooltip: {
+                    backgroundColor: '#1e293b',
+                    padding: 12,
+                    titleFont: { size: 12 },
+                    bodyFont: { size: 14, weight: '900' }
+                }
+            },
             scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.1)' } },
-                x: { grid: { display: false } }
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                    ticks: { color: '#94A3B8', font: { size: 10 } }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#94A3B8', font: { size: 10 } }
+                }
             }
         }
     });
@@ -566,24 +594,23 @@ function renderTeam() {
 }
 
 function renderTeamLeaderboard(container) {
-    const stats = team.map(m => {
-        const myTrans = teamTransactions.filter(t => t.memberId === m.id);
-        const totalQty = myTrans.reduce((sum, t) => sum + t.qty, 0);
+    // Sort logic
+    const leaders = team.map(m => {
+        const memberSales = teamTransactions.filter(t => t.memberId === m.id);
+        const totalQty = memberSales.reduce((sum, t) => sum + t.qty, 0);
         return { ...m, totalQty };
-    });
+    }).sort((a, b) => b.totalQty - a.totalQty);
 
-    stats.sort((a, b) => b.totalQty - a.totalQty);
-
-    stats.forEach((m, idx) => {
-        const rank = idx + 1;
+    leaders.forEach((m, index) => {
+        const rank = index + 1;
         const div = document.createElement('div');
         div.className = 'glass-card';
         div.style.display = 'flex';
         div.style.alignItems = 'center';
-        div.style.gap = '15px';
-        div.style.cursor = 'pointer';
-        div.style.marginBottom = '10px';
+        div.style.justifyContent = 'space-between';
+
         div.onclick = () => {
+            hapticFeedback();
             if (selectionStates.team) {
                 const cb = div.querySelector('input[type="checkbox"]');
                 cb.checked = !cb.checked;
@@ -595,41 +622,45 @@ function renderTeamLeaderboard(container) {
         div.innerHTML = `
             <div style="display: flex; align-items: center; gap: 15px; flex: 1;">
                 ${selectionStates.team ? `<input type="checkbox" class="cb-team" value="${m.id}" style="transform: scale(1.3); margin-right: 5px;">` : ''}
-                <div style="font-size: 1.5rem; width: 30px; text-align: center;">
+                <div style="font-size: 1.2rem; min-width: 30px; font-weight: 900; color: var(--text-secondary);">
                     ${rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '#' + rank}
                 </div>
-                <div style="font-size: 2.5rem;">${m.icon || '👤'}</div>
+                <div style="font-size: 2rem;">${m.icon || '👤'}</div>
                 <div style="flex: 1;">
-                    <h3 style="margin: 0;">${m.name}</h3>
-                    <small style="color: var(--text-secondary);">${selectionStates.team ? 'Seleziona per eliminare' : 'Clicca per statistiche e stipendio'}</small>
+                    <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800;">${m.name}</h3>
+                    <small style="color: var(--text-secondary); font-weight: 500;">${m.totalQty} Vendite</small>
                 </div>
             </div>
             <div style="text-align: right;">
-                <div style="font-size: 1.2rem; font-weight: bold;">${m.totalQty}</div>
-                <small>Vendite</small>
+                <div style="font-size: 1.1rem; font-weight: 900; color: var(--color-profit);">
+                    →
+                </div>
             </div>
         `;
         container.appendChild(div);
+        // FAB Management for Leaderboard
+        const existingFab = document.querySelector('.fab-btn');
+        if (existingFab) existingFab.remove();
+
+        if (!selectionStates.team) {
+            const fab = document.createElement('button');
+            fab.innerText = '+';
+            fab.className = 'btn fab-btn';
+            fab.style.position = 'fixed';
+            fab.style.bottom = '95px';
+            fab.style.right = '20px';
+            fab.style.width = '60px';
+            fab.style.height = '60px';
+            fab.style.borderRadius = '30px';
+            fab.style.fontSize = '30px';
+            fab.style.background = 'var(--color-profit)';
+            fab.style.color = '#000';
+            fab.style.boxShadow = '0 10px 20px rgba(0,0,0,0.3)';
+            fab.style.zIndex = '999';
+            fab.onclick = () => { hapticFeedback(); addEmployeePrompt(); };
+            document.body.appendChild(fab);
+        }
     });
-
-    const existingFab = document.querySelector('.fab-btn');
-    if (existingFab) existingFab.remove();
-
-    const fab = document.createElement('button');
-    fab.innerText = '+';
-    fab.className = 'btn fab-btn';
-    fab.style.position = 'fixed';
-    fab.style.bottom = '85px';
-    fab.style.right = '20px';
-    fab.style.width = '60px';
-    fab.style.height = '60px';
-    fab.style.borderRadius = '50%';
-    fab.style.fontSize = '30px';
-    fab.style.background = 'var(--color-profit)';
-    fab.style.color = '#000';
-    fab.style.zIndex = '999';
-    fab.onclick = openQuickAddTeamModal;
-    document.body.appendChild(fab);
 }
 
 function renderMemberProfile(memberId, container) {
@@ -646,51 +677,57 @@ function renderMemberProfile(memberId, container) {
     const totalEarnings = myTrans.reduce((s, t) => s + t.amount, 0);
 
     container.innerHTML = `
-        <button class="btn" style="margin-bottom: 20px; background: rgba(255,255,255,0.1);" onclick="currentTeamMemberId=null; renderTeam();">
-            ⬅ Torna alla Classifica
+        <button class="btn glass-card" style="margin-bottom: 24px; font-size: 0.8rem; padding: 10px 16px; min-height: auto;" onclick="hapticFeedback(); currentTeamMemberId=null; renderTeam();">
+            ⬅ Classifica
         </button>
         
-        <div class="glass-card" style="text-align: center; margin-bottom: 20px;">
-            <div style="font-size: 4rem;">${m.icon || '👤'}</div>
-            <h2>${m.name}</h2>
-            <div style="color: var(--color-income); font-weight: bold; margin-top: 5px;">
-                ${(sweetCount + chipCount) > 20 ? '🏆 Top Seller' : (sweetCount + chipCount) > 5 ? '⭐ Rising Star' : ''}
+        <div class="glass-card" style="text-align: center; padding: 30px 20px;">
+            <div style="font-size: 4.5rem; margin-bottom: 12px;">${m.icon || '👤'}</div>
+            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 800;">${m.name}</h2>
+            <div style="color: var(--color-income); font-weight: 700; font-size: 0.8rem; margin-top: 6px; letter-spacing: 0.05em; text-transform: uppercase;">
+                ${(sweetCount + chipCount) > 20 ? '🏆 Top Seller' : (sweetCount + chipCount) > 5 ? '⭐ Rising Star' : 'Nuovo Membro'}
             </div>
         </div>
 
-        <div class="glass-card" style="margin-bottom: 20px; border: 1px solid var(--color-profit);">
+        <div class="glass-card" style="border: 1px solid var(--color-profit);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h3 style="margin: 0;">Portafoglio</h3>
-                    <small>Da Saldare</small>
+                    <h3 style="margin: 0; font-size: 0.9rem; color: var(--text-secondary); text-transform: uppercase;">Portafoglio</h3>
+                    <div style="font-size: 1.8rem; font-weight: 900; margin-top: 4px;">€${unpaid.toFixed(2)}</div>
                 </div>
-                <div style="font-size: 1.5rem; font-weight: bold;">€${unpaid.toFixed(2)}</div>
+                <div style="background: rgba(46, 204, 113, 0.1); padding: 10px; border-radius: 14px;">
+                    💰
+                </div>
             </div>
-            ${unpaid > 0 ? `<button class="btn" style="width: 100%; margin-top: 15px; background: var(--color-profit); color: #000;" onclick="payMember(${m.id})">💰 Segna come Pagato</button>` : ''}
-            <div style="text-align: center; margin-top: 10px; font-size: 0.8rem; opacity: 0.7;">Guadagni Totali: €${totalEarnings.toFixed(2)}</div>
+            ${unpaid > 0 ? `<button class="btn" style="width: 100%; margin-top: 20px; background: var(--color-profit); color: #000; font-weight: 800;" onclick="hapticFeedback(); payMember(${m.id})">EFFETTUA PAGAMENTO</button>` : ''}
+            <div style="text-align: center; margin-top: 12px; font-size: 0.75rem; opacity: 0.6; font-weight: 500;">Guadagni Correnti: €${totalEarnings.toFixed(2)}</div>
         </div>
 
-        <div class="glass-card" style="margin-bottom: 20px;">
-            <h3>Dettagli Vendite</h3>
-            <canvas id="memberPieChart" height="200"></canvas>
+        <div class="glass-card">
+            <h3 style="font-size: 1rem; margin-bottom: 15px;">📊 Performance</h3>
+            <div class="chart-container" style="height: 200px;">
+                <canvas id="memberPieChart"></canvas>
+            </div>
         </div>
 
-        <h3>Storico</h3>
-        <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin: 24px 0 16px;">
+            <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800;">Dettagli Vendite</h3>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 40px;">
             ${myTrans.map(t => `
-                <div class="glass-card" style="padding: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="openEditTeamTransactionModal('${t.id}')">
-                    <div style="flex: 1;">
-                        <div style="font-weight: bold;">${t.type === 'sweet' ? '🍫 Dolce' : '🍟 Salato'} x${t.qty}</div>
-                        <small>${new Date(t.date).toLocaleDateString()}</small>
-                    </div>
-                    <div style="text-align: right; display: flex; align-items: center; gap: 10px;">
+                <div class="glass-card" style="padding: 16px; border-left: 4px solid ${t.paid ? 'var(--color-profit)' : 'var(--color-expense)'};" onclick="hapticFeedback(); openEditTeamTransactionModal('${t.id}')">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <div style="font-weight: bold;">+€${t.amount.toFixed(2)}</div>
-                            <small style="color: ${t.paid ? 'var(--color-profit)' : '#ff9f43'}">${t.paid ? 'PAGATO' : 'DA SALDARE'}</small>
+                            <div style="font-weight: 800; font-size: 1rem;">${t.type === 'sweet' ? '🍫 Dolce' : '🍟 Salato'} <span style="opacity: 0.5;">x${t.qty}</span></div>
+                            <small style="color: var(--text-secondary); font-weight: 500;">${new Date(t.date).toLocaleDateString()}</small>
                         </div>
-                        <button class="btn-icon" onclick="event.stopPropagation(); deleteTeamTransaction('${t.id}')" style="background: none; border: none; font-size: 1.1rem; cursor: pointer;">
-                            🗑️
-                        </button>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 900; font-size: 1.1rem; color: ${t.paid ? 'var(--color-profit)' : 'var(--color-income)'};">€${t.amount.toFixed(2)}</div>
+                            <small style="color: ${t.paid ? 'var(--color-profit)' : 'var(--color-expense)'}; font-size: 0.65rem; font-weight: 700; text-transform: uppercase;">
+                                ${t.paid ? 'Pagato' : 'In Sospeso'}
+                            </small>
+                        </div>
                     </div>
                 </div>
             `).join('')}
@@ -698,22 +735,27 @@ function renderMemberProfile(memberId, container) {
     `;
 
     setTimeout(() => {
-        const ctx = document.getElementById('memberPieChart');
-        if (ctx) {
-            new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Dolce 🍫', 'Salato 🍟'],
-                    datasets: [{
-                        data: [sweetCount, chipCount],
-                        backgroundColor: [PRODUCT_COLORS.crostatina_ciocco, PRODUCT_COLORS.patatina],
-                        borderWidth: 0
-                    }]
-                },
-                options: { responsive: true, cutout: '65%' }
-            });
-        }
-    }, 50);
+        const ctx = document.getElementById('memberPieChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Dolci', 'Salati'],
+                datasets: [{
+                    data: [sweetCount, chipCount],
+                    backgroundColor: ['#D35400', '#FFD700'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#94A3B8', font: { size: 10 } } }
+                }
+            }
+        });
+    }, 100);
 }
 
 function openQuickAddTeamModal() {
@@ -914,58 +956,62 @@ function renderSubs() {
 }
 
 function createSubCard(sub) {
-    const div = document.createElement('div');
-    div.className = 'glass-card';
-    div.style.marginBottom = '10px';
-    div.style.cursor = selectionStates.subs ? 'pointer' : 'default';
+    const card = document.createElement('div');
+    card.className = 'glass-card';
+    card.style.opacity = currentSubsView === 'registry' ? '0.7' : '1';
 
-    if (selectionStates.subs) {
-        div.onclick = () => {
-            const cb = div.querySelector('input[type="checkbox"]');
+    card.onclick = () => {
+        hapticFeedback();
+        if (selectionStates.subs) {
+            const cb = card.querySelector('input[type="checkbox"]');
             cb.checked = !cb.checked;
-        };
-    }
+        } else if (currentSubsView === 'registry') {
+            openEditSubModal(sub.id);
+        }
+    };
 
-    div.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                ${selectionStates.subs ? `<input type="checkbox" class="cb-subs" value="${sub.id}" style="transform: scale(1.3);">` : ''}
-                <div style="font-weight: bold; font-size: 1.1rem;">
-                    ${sub.type === 'sweet' ? '🍫' : '🍟'} ${sub.name}
+    const typeIcon = sub.type === 'sweet' ? '🍫' : '🍟';
+    const typeLabel = sub.type === 'sweet' ? 'Dolce' : 'Salato';
+
+    card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                ${selectionStates.subs ? `<input type="checkbox" class="cb-subs" value="${sub.id}" style="transform: scale(1.3); margin-right: 8px;">` : ''}
+                <div style="font-size: 1.8rem; background: rgba(255,255,255,0.05); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 12px;">${typeIcon}</div>
+                <div>
+                    <div style="font-weight: 800; font-size: 1.1rem;">${sub.name}</div>
+                    <small style="color: var(--text-secondary); font-weight: 600; font-size: 0.65rem; text-transform: uppercase;">${typeLabel}</small>
                 </div>
             </div>
-            ${currentSubsView === 'active' ? '' : `
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="color: var(--color-profit); font-size: 0.8rem; font-weight: bold;">COMPLETATO ✅</span>
-                    <button class="btn-icon" onclick="restoreSub('${sub.id}')" title="Ripristina in Attivi" style="background:none; border:none; cursor:pointer; font-size:1rem; opacity: 0.7;">🔄</button>
+            ${currentSubsView === 'active' ? `
+                <div style="text-align: right;">
+                    <button class="btn glass-card" style="padding: 6px 10px; min-height: auto; font-size: 0.65rem; font-weight: 800;" onclick="event.stopPropagation(); hapticFeedback(); toggleSubPaidStatus(${sub.id})">
+                        ${sub.days.filter(d => d).length}/5 GG
+                    </button>
                 </div>
-            `}
+            ` : ''}
         </div>
-        <div style="display: flex; justify-content: space-between; gap: 5px; ${selectionStates.subs ? 'pointer-events: none; opacity: 0.5;' : ''}">
-            ${sub.days.map((checked, i) => {
-        const daysLabels = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven'];
-        return `
-                    <div style="text-align: center; flex: 1;">
-                        <div 
-                            onclick="${currentSubsView === 'active' ? `toggleSubDay('${sub.id}', ${i})` : ''}"
-                            style="
-                                height: 35px; 
-                                border: 2px solid ${checked ? 'var(--color-profit)' : '#555'}; 
-                                background: ${checked ? 'var(--color-profit)' : 'rgba(255,255,255,0.05)'};
-                                border-radius: 8px; cursor: ${currentSubsView === 'active' ? 'pointer' : 'default'};
-                                display: flex; align-items: center; justify-content: center;
-                                transition: 0.2s;
-                            "
-                        >
-                            ${checked ? '<span style="color: #000; font-weight: bold;">✓</span>' : ''}
-                        </div>
-                        <small style="font-size: 0.7rem; opacity: 0.6; margin-top: 4px; display: block;">${daysLabels[i]}</small>
-                    </div>
-                `;
-    }).join('')}
+        
+        <div style="display: flex; justify-content: space-between; gap: 8px;">
+            ${sub.days.map((day, i) => `
+                <div 
+                    onclick="event.stopPropagation(); hapticFeedback(); toggleSubDay(${sub.id}, ${i})"
+                    class="glass-card"
+                    style="
+                        flex: 1; height: 44px; display: flex; align-items: center; justify-content: center;
+                        background: ${day ? 'var(--color-profit)' : 'rgba(255, 255, 255, 0.03)'};
+                        border: 1px solid ${day ? 'var(--color-profit)' : 'rgba(255, 255, 255, 0.1)'};
+                        cursor: pointer; transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                        color: ${day ? '#000' : '#888'}; font-weight: 900; font-size: 0.8rem;
+                        box-shadow: ${day ? '0 4px 12px rgba(46, 204, 113, 0.2)' : 'none'};
+                    "
+                >
+                    ${day ? '✓' : i + 1}
+                </div>
+            `).join('')}
         </div>
     `;
-    return div;
+    return card;
 }
 
 function toggleSubDay(id, dayIdx) {
@@ -1089,44 +1135,49 @@ function renderCredits() {
     if (!list) return;
     list.innerHTML = '';
 
+    credits.sort((a, b) => (a.paid === b.paid ? 0 : a.paid ? 1 : -1));
+
     credits.forEach(c => {
         const div = document.createElement('div');
         div.className = 'glass-card';
         div.style.display = 'flex';
         div.style.justifyContent = 'space-between';
         div.style.alignItems = 'center';
-        div.style.opacity = c.paid ? '0.6' : '1';
-        div.style.cursor = selectionStates.credits ? 'pointer' : 'default';
+        div.style.padding = '16px';
+        div.style.opacity = c.paid ? '0.5' : '1';
 
-        if (selectionStates.credits) {
-            div.onclick = () => {
+        div.onclick = () => {
+            hapticFeedback();
+            if (selectionStates.credits) {
                 const cb = div.querySelector('input[type="checkbox"]');
                 cb.checked = !cb.checked;
-            };
-        }
+            } else {
+                toggleCreditPaid(c.id);
+            }
+        };
 
         div.innerHTML = `
             <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
-                ${selectionStates.credits ? `<input type="checkbox" class="cb-credits" value="${c.id}" style="transform: scale(1.3); margin-right: 5px;">` : ''}
-                <div 
-                    onclick="${selectionStates.credits ? '' : `toggleCreditPaid('${c.id}')`}"
-                    style="
-                        width: 24px; height: 24px; 
-                        border: 2px solid ${c.paid ? 'var(--color-profit)' : '#888'}; 
-                        background: ${c.paid ? 'var(--color-profit)' : 'transparent'};
-                        border-radius: 6px; cursor: pointer;
-                        display: flex; align-items: center; justify-content: center;
-                        transition: 0.2s;
-                        ${selectionStates.credits ? 'pointer-events: none;' : ''}
-                    "
-                >
-                    ${c.paid ? '<span style="color: #000; font-weight: bold; font-size: 0.8rem;">✓</span>' : ''}
+                ${selectionStates.credits ? `<input type="checkbox" class="cb-credits" value="${c.id}" style="transform: scale(1.3); margin-right: 8px;">` : ''}
+                <div style="
+                    width: 44px; height: 44px; border-radius: 12px;
+                    border: 2px solid ${c.paid ? 'var(--color-profit)' : 'rgba(255,255,255,0.1)'}; 
+                    background: ${c.paid ? 'rgba(46, 204, 113, 0.1)' : 'rgba(255,255,255,0.03)'};
+                    display: flex; align-items: center; justify-content: center;
+                    transition: 0.3s;
+                ">
+                    <span style="font-size: 1.2rem; color: ${c.paid ? 'var(--color-profit)' : '#888'}; font-weight: 900;">
+                        ${c.paid ? '✓' : '!'}
+                    </span>
                 </div>
-                <div style="text-decoration: ${c.paid ? 'line-through' : 'none'};">
-                    <strong>${c.name}</strong>
+                <div style="text-decoration: ${c.paid ? 'line-through' : 'none'}; opacity: ${c.paid ? '0.6' : '1'};">
+                    <strong style="font-size: 1rem; font-weight: 800; display: block;">${c.name}</strong>
+                    <small style="color: var(--text-secondary); font-weight: 600; font-size: 0.65rem; text-transform: uppercase;">
+                        ${c.paid ? 'Saldato' : 'In Sospeso'}
+                    </small>
                 </div>
             </div>
-            <div style="color: var(--color-expense); font-weight: bold; font-size: 1rem; text-align: right;">
+            <div style="color: ${c.paid ? 'var(--color-profit)' : 'var(--color-expense)'}; font-weight: 900; font-size: 1.1rem; text-align: right;">
                 €${c.amount.toFixed(2)}
             </div>
         `;
@@ -1245,18 +1296,18 @@ function renderTransactions() {
         }
 
         const dateStr = new Date(t.date).toLocaleDateString();
-        const amountColor = t.type === 'income' ? 'var(--color-profit)' : 'var(--color-expense)';
+        const amountColor = t.type === 'income' ? 'var(--color-income)' : 'var(--color-expense)';
         const sign = t.type === 'income' ? '+' : '-';
 
         div.innerHTML = `
             <div style="display: flex; align-items: center; flex: 1; gap: 15px;">
                 ${selectionStates.home ? `<input type="checkbox" class="cb-home" value="${t.id}" style="transform: scale(1.3);">` : ''}
                 <div style="flex: 1;">
-                    <div style="font-weight: bold;">${t.desc}</div>
-                    <small style="color: var(--text-secondary)">${dateStr}</small>
+                    <div style="font-weight: 800; font-size: 0.95rem;">${t.desc}</div>
+                    <small style="color: var(--text-secondary); font-weight: 500;">${dateStr}</small>
                 </div>
             </div>
-            <div style="color: ${amountColor}; font-weight: bold; font-size: 1.1rem; text-align: right;">
+            <div style="color: ${amountColor}; font-weight: 900; font-size: 1.1rem; text-align: right;">
                 ${sign}€${t.amount.toFixed(2)}
             </div>
         `;
@@ -1359,28 +1410,42 @@ function updateChart() {
             datasets: [{
                 label: 'Profitto Netto',
                 data: profitData,
-                borderColor: '#32CD32',
-                backgroundColor: 'rgba(50, 205, 50, 0.1)',
+                borderColor: '#2ECC71',
+                backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                borderWidth: 3,
+                pointRadius: 4,
+                pointBackgroundColor: '#2ECC71',
                 tension: 0.4,
                 fill: true
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
-                legend: { display: false }
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1e293b',
+                    titleFont: { size: 12, weight: 'bold' },
+                    bodyFont: { size: 14, weight: '900' },
+                    padding: 12,
+                    displayColors: false,
+                    callbacks: {
+                        label: (ctx) => `€${ctx.parsed.y.toFixed(2)}`
+                    }
+                }
             },
             scales: {
                 y: {
                     beginAtZero: true,
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    ticks: { color: '#aaa' }
+                    grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                    ticks: { color: '#94A3B8', font: { size: 10 } }
                 },
                 x: {
                     grid: { display: false },
                     ticks: {
-                        display: true, // SHOW LABELS
-                        color: '#aaa',
+                        color: '#94A3B8',
+                        font: { size: 10 },
                         maxTicksLimit: 5
                     }
                 }

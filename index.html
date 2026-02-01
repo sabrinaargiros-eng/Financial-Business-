@@ -16,80 +16,91 @@
 <body>
     <div id="app">
         <header>
-            <h1>Business Manager</h1>
-            <p style="color: var(--text-secondary); font-size: 0.9rem;">Gestione Snack & Finanze</p>
+            <div>
+                <h1>Business Manager</h1>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; font-weight: 500;">Gestione Smart & Finanze
+                </p>
+            </div>
+            <button class="btn-icon" onclick="exportReport()" title="Esporta PDF">📄</button>
         </header>
 
         <main>
-            <!-- 1. Home / Dashboard -->
+            <!-- 1. Dashboard -->
             <section id="view-home" class="view-section active">
-                <!-- 1. Widgets (Now at top) -->
-                <div
-                    style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; margin-bottom: 20px;">
-                    <div class="glass-card">
-                        <small>Entrate</small>
-                        <div id="val-income" class="text-income" style="font-weight: bold; font-size: 1.1rem;">€0.00
-                        </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px;">
+                    <div class="glass-card" style="padding: 15px 10px; text-align: center;">
+                        <small
+                            style="color: var(--text-secondary); font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">Entrate</small>
+                        <div id="val-income"
+                            style="color: var(--color-income); font-weight: 800; font-size: 1.1rem; margin-top: 4px;">
+                            €0.00</div>
                     </div>
-                    <div class="glass-card">
-                        <small>Spese</small>
-                        <div id="val-expense" class="text-expense" style="font-weight: bold; font-size: 1.1rem;">€0.00
-                        </div>
+                    <div class="glass-card" style="padding: 15px 10px; text-align: center;">
+                        <small
+                            style="color: var(--text-secondary); font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">Spese</small>
+                        <div id="val-expense"
+                            style="color: var(--color-expense); font-weight: 800; font-size: 1.1rem; margin-top: 4px;">
+                            €0.00</div>
                     </div>
-                    <div class="glass-card">
-                        <small>Profitto</small>
-                        <div id="val-profit" class="text-profit" style="font-weight: bold; font-size: 1.1rem;">€0.00
-                        </div>
+                    <div class="glass-card" style="padding: 15px 10px; text-align: center;">
+                        <small
+                            style="color: var(--text-secondary); font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">Profitto</small>
+                        <div id="val-profit"
+                            style="color: var(--color-profit); font-weight: 800; font-size: 1.1rem; margin-top: 4px;">
+                            €0.00</div>
                     </div>
                 </div>
 
-                <!-- 3. Direct Actions -->
-                <div style="display: flex; gap: 10px; margin-top: 10px; margin-bottom: 20px;">
+                <div style="display: flex; gap: 12px; margin-bottom: 24px;">
                     <button class="btn" style="flex: 1; background: var(--color-income); color: #000;"
                         onclick="openTransactionModal('income')">
-                        + Entrata
+                        <span>+</span> Entrata
                     </button>
                     <button class="btn" style="flex: 1; background: var(--color-expense); color: #fff;"
                         onclick="openTransactionModal('expense')">
-                        - Uscita
+                        <span>-</span> Uscita
                     </button>
                 </div>
 
-                <!-- 2. Chart -->
-                <div class="glass-card" style="margin-bottom: 20px;">
-                    <h2 style="text-align: center;">Bilancio Attuale</h2>
-                    <canvas id="financeChart" width="100%" height="200"></canvas>
-                    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 15px;">
-                        <button class="btn glass-card" onclick="setChartFilter('all')">Tutto</button>
-                        <button class="btn glass-card" onclick="setChartFilter('week')">Settimana</button>
-                        <button class="btn glass-card" onclick="setChartFilter('month')">Mese</button>
+                <div class="glass-card">
+                    <h2 style="font-size: 1rem; margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+                        📊 Statistiche Flux
+                    </h2>
+                    <div class="chart-container">
+                        <canvas id="financeChart"></canvas>
+                    </div>
+                    <div style="display: flex; justify-content: center; gap: 8px; margin-top: 10px;">
+                        <button class="btn glass-card" style="padding: 8px 12px; font-size: 0.75rem; min-height: auto;"
+                            onclick="setChartFilter('all')">Tutto</button>
+                        <button class="btn glass-card" style="padding: 8px 12px; font-size: 0.75rem; min-height: auto;"
+                            onclick="setChartFilter('week')">Settimana</button>
+                        <button class="btn glass-card" style="padding: 8px 12px; font-size: 0.75rem; min-height: auto;"
+                            onclick="setChartFilter('month')">Mese</button>
                     </div>
                 </div>
 
-                <!-- 4. Transaction History -->
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2>📈 Bilancio</h2>
-                    <button class="btn glass-card" style="padding: 5px 15px; font-size: 0.8rem;"
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 24px 0 16px;">
+                    <h2 style="margin: 0;">📈 Movimenti</h2>
+                    <button class="btn glass-card" style="padding: 6px 14px; font-size: 0.75rem; min-height: auto;"
                         onclick="toggleSelectionMode('home')">Seleziona</button>
                 </div>
 
-                <!-- Bulk Actions -->
-                <div id="bulk-actions-home"
-                    style="display: none; background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--color-expense);">
+                <div id="bulk-actions-home" class="bulk-action-bar">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: bold; color: var(--color-expense);">Modalità Selezione</span>
-                        <div style="display: flex; gap: 10px;">
+                        <span style="font-weight: 700; font-size: 0.85rem; color: var(--color-expense);">MODALITÀ
+                            SELEZIONE</span>
+                        <div style="display: flex; gap: 8px;">
                             <button class="btn"
-                                style="background: var(--color-expense); color: #fff; padding: 5px 15px;"
-                                onclick="bulkDelete('home')">Elimina Selezionati</button>
-                            <button class="btn glass-card" style="padding: 5px 15px;"
+                                style="background: var(--color-expense); color: #fff; padding: 6px 12px; min-height: auto; font-size: 0.75rem;"
+                                onclick="bulkDelete('home')">Elimina</button>
+                            <button class="btn glass-card"
+                                style="padding: 6px 12px; min-height: auto; font-size: 0.75rem;"
                                 onclick="toggleSelectionMode('home')">Annulla</button>
                         </div>
                     </div>
                 </div>
 
-                <div id="transaction-list"
-                    style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+                <div id="transaction-list" style="display: flex; flex-direction: column; gap: 12px;">
                     <!-- Rendered via JS -->
                 </div>
             </section>
@@ -100,13 +111,13 @@
                     <h2>📦 Magazzino</h2>
                     <div style="display: flex; gap: 10px;">
                         <input type="date" id="inventory-date-picker" class="form-input"
-                            style="width: auto; padding: 5px;" onchange="loadInventoryDate(this.value)">
-                        <button class="btn glass-card"
-                            style="padding: 5px 15px; font-size: 0.8rem; background: var(--color-profit); color: #000;"
-                            onclick="openAddProductModal()">+ Aggiungi</button>
+                            style="width: auto; margin-bottom: 0; min-height: 40px;"
+                            onchange="loadInventoryDate(this.value)">
+                        <button class="btn-icon" style="background: var(--color-profit); color: #000; border: none;"
+                            onclick="openAddProductModal()">+</button>
                     </div>
                 </div>
-                <div id="inventory-list" style="display: flex; flex-direction: column; gap: 15px;">
+                <div id="inventory-list" style="display: flex; flex-direction: column; gap: 12px;">
                     <!-- Items rendered via JS -->
                 </div>
             </section>
@@ -114,117 +125,110 @@
             <!-- 3. Team -->
             <section id="view-team" class="view-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2>🏆 Team</h2>
+                    <h2>👥 Team</h2>
                     <div style="display: flex; gap: 10px;">
-                        <button class="btn glass-card" style="padding: 5px 15px; font-size: 0.8rem;"
+                        <button class="btn glass-card" style="padding: 8px 14px; font-size: 0.75rem; min-height: auto;"
                             onclick="toggleSelectionMode('team')">Seleziona</button>
-                        <button class="btn glass-card"
-                            style="padding: 5px 15px; font-size: 0.8rem; background: var(--color-profit); color: #000;"
-                            onclick="addEmployeePrompt()">+ Aggiungi</button>
+                        <button class="btn-icon" style="background: var(--color-profit); color: #000; border: none;"
+                            onclick="addEmployeePrompt()">+</button>
                     </div>
                 </div>
 
-                <!-- Bulk Actions Team -->
-                <div id="bulk-actions-team"
-                    style="display: none; background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--color-expense);">
+                <div id="bulk-actions-team" class="bulk-action-bar">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: bold; color: var(--color-expense);">Seleziona Dipendenti</span>
-                        <div style="display: flex; gap: 10px;">
+                        <span style="font-weight: 700; font-size: 0.85rem; color: var(--color-expense);">MODALITÀ
+                            SELEZIONE</span>
+                        <div style="display: flex; gap: 8px;">
                             <button class="btn"
-                                style="background: var(--color-expense); color: #fff; padding: 5px 15px;"
+                                style="background: var(--color-expense); color: #fff; padding: 6px 12px; min-height: auto; font-size: 0.75rem;"
                                 onclick="bulkDelete('team')">Elimina</button>
-                            <button class="btn glass-card" style="padding: 5px 15px;"
+                            <button class="btn glass-card"
+                                style="padding: 6px 12px; min-height: auto; font-size: 0.75rem;"
                                 onclick="toggleSelectionMode('team')">Annulla</button>
                         </div>
                     </div>
                 </div>
 
-                <div id="team-list" style="display: flex; flex-direction: column; gap: 10px; padding-bottom: 100px;">
-                    <!-- App gestita interamente da JS (renderTeam) -->
+                <div id="team-list" style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- App gestita interamente da JS -->
                 </div>
             </section>
 
-            <!-- 4. Abbonamenti -->
+            <!-- 4. Priority (Abbonamenti) -->
             <section id="view-subs" class="view-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2>📅 Abbonamenti</h2>
-                    <div style="display: flex; gap: 10px;">
-                        <button class="btn glass-card" style="padding: 5px 15px; font-size: 0.8rem;"
+                    <h2>💎 Priority</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn glass-card" style="padding: 6px 12px; font-size: 0.7rem; min-height: auto;"
                             onclick="toggleSelectionMode('subs')">Seleziona</button>
-                        <button class="btn glass-card" style="padding: 5px 15px; font-size: 0.8rem;"
+                        <button class="btn glass-card" style="padding: 6px 12px; font-size: 0.7rem; min-height: auto;"
                             onclick="toggleSubsView('active')" id="btn-subs-active">Attivi</button>
-                        <button class="btn glass-card" style="padding: 5px 15px; font-size: 0.8rem;"
+                        <button class="btn glass-card" style="padding: 6px 12px; font-size: 0.7rem; min-height: auto;"
                             onclick="toggleSubsView('registry')" id="btn-subs-registry">Registro</button>
                     </div>
                 </div>
 
-                <!-- Bulk Actions Subs -->
-                <div id="bulk-actions-subs"
-                    style="display: none; background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--color-expense);">
+                <div id="bulk-actions-subs" class="bulk-action-bar">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: bold; color: var(--color-expense);">Seleziona Abbonati</span>
-                        <div style="display: flex; gap: 10px;">
+                        <span style="font-weight: bold; color: var(--color-expense);">MODALITÀ SELEZIONE</span>
+                        <div style="display: flex; gap: 8px;">
                             <button class="btn"
-                                style="background: var(--color-expense); color: #fff; padding: 5px 15px;"
+                                style="background: var(--color-expense); color: #fff; padding: 6px 12px; min-height: auto;"
                                 onclick="bulkDelete('subs')">Elimina</button>
-                            <button class="btn glass-card" style="padding: 5px 15px;"
+                            <button class="btn glass-card" style="padding: 6px 12px; min-height: auto;"
                                 onclick="toggleSelectionMode('subs')">Annulla</button>
                         </div>
                     </div>
                 </div>
 
-                <div id="subs-list" style="display: flex; flex-direction: column; gap: 15px;">
+                <div id="subs-list" style="display: flex; flex-direction: column; gap: 12px;">
                     <!-- Items rendered via JS -->
                 </div>
 
-                <div id="subs-controls" style="margin-top: 20px;">
-                    <button class="btn glass-card"
-                        style="width: 100%; margin-bottom: 10px; background: var(--color-income); color: #000;"
-                        onclick="openAddSubModal()">+ Aggiungi Abbonato</button>
-                    <button class="btn glass-card" style="width: 100%; opacity: 0.7;" onclick="resetWeekSubs()">🔄 Reset
-                        Settimana</button>
+                <div id="subs-controls"
+                    style="margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <button class="btn glass-card" style="background: var(--color-income); color: #000;"
+                        onclick="openAddSubModal()">+ Profilo</button>
+                    <button class="btn glass-card" style="opacity: 0.7;" onclick="resetWeekSubs()">🔄 Reset</button>
                 </div>
             </section>
 
             <!-- 5. Crediti -->
             <section id="view-credits" class="view-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2>📒 Registro Crediti</h2>
+                    <h2>💳 Crediti</h2>
                     <div style="display: flex; gap: 10px;">
-                        <button class="btn glass-card" style="padding: 5px 15px; font-size: 0.8rem;"
+                        <button class="btn glass-card" style="padding: 8px 14px; font-size: 0.75rem; min-height: auto;"
                             onclick="toggleSelectionMode('credits')">Seleziona</button>
-                        <button class="btn glass-card"
-                            style="background: var(--color-income); color: #000; padding: 5px 15px; font-size: 0.8rem;"
-                            onclick="addCreditPrompt()">+ Aggiungi</button>
+                        <button class="btn-icon" style="background: var(--color-income); color: #000; border: none;"
+                            onclick="addCreditPrompt()">+</button>
                     </div>
                 </div>
 
-                <!-- Bulk Actions Credits -->
-                <div id="bulk-actions-credits"
-                    style="display: none; background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--color-expense);">
+                <div id="bulk-actions-credits" class="bulk-action-bar">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: bold; color: var(--color-expense);">Seleziona Crediti</span>
-                        <div style="display: flex; gap: 10px;">
+                        <span style="font-weight: bold; color: var(--color-expense);">MODALITÀ SELEZIONE</span>
+                        <div style="display: flex; gap: 8px;">
                             <button class="btn"
-                                style="background: var(--color-expense); color: #fff; padding: 5px 15px;"
+                                style="background: var(--color-expense); color: #fff; padding: 6px 12px; min-height: auto;"
                                 onclick="bulkDelete('credits')">Elimina</button>
-                            <button class="btn glass-card" style="padding: 5px 15px;"
+                            <button class="btn glass-card" style="padding: 6px 12px; min-height: auto;"
                                 onclick="toggleSelectionMode('credits')">Annulla</button>
                         </div>
                     </div>
                 </div>
 
-                <div id="credits-list" style="display: flex; flex-direction: column; gap: 10px;">
+                <div id="credits-list" style="display: flex; flex-direction: column; gap: 12px;">
                     <!-- Items rendered via JS -->
                 </div>
             </section>
         </main>
 
-        <!-- Bottom Navigation -->
+        <!-- Bottom Navigation Mobile -->
         <nav class="bottom-nav">
             <div class="nav-item active" onclick="switchTab('home')">
-                <span class="nav-icon">🏠</span>
-                <span>Home</span>
+                <span class="nav-icon">📊</span>
+                <span>Dashboard</span>
             </div>
             <div class="nav-item" onclick="switchTab('inventory')">
                 <span class="nav-icon">📦</span>
@@ -235,21 +239,21 @@
                 <span>Team</span>
             </div>
             <div class="nav-item" onclick="switchTab('subs')">
-                <span class="nav-icon">📅</span>
-                <span>Abbonati</span>
+                <span class="nav-icon">💎</span>
+                <span>Priority</span>
             </div>
             <div class="nav-item" onclick="switchTab('credits')">
-                <span class="nav-icon">📒</span>
+                <span class="nav-icon">💳</span>
                 <span>Crediti</span>
             </div>
         </nav>
     </div>
 
-    <!-- Modals -->
+    <!-- Modals System -->
     <div id="modal-overlay" class="modal-overlay">
         <div class="modal-content">
-            <button class="close-modal" onclick="closeModal()">×</button>
-            <h2 id="modal-title">Titolo Modal</h2>
+            <button class="close-modal" onclick="closeModal()"></button>
+            <h2 id="modal-title" style="text-align: center; margin-bottom: 25px; font-size: 1.2rem;">Titolo Modal</h2>
             <div id="modal-body">
                 <!-- Dynamic Content -->
             </div>
