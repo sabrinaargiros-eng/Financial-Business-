@@ -80,6 +80,7 @@ function initSync() {
             console.error(`Firebase Sync Error for ${key}:`, error);
             if (error.message.includes('permission_denied') || error.code === 'PERMISSION_DENIED') {
                 console.warn("PERMESSI NEGATI: Assicurati di aver impostato 'Modalità Test' nelle Regole del Database su Firebase.");
+                alert("🔴 ERRORE FIREBASE: Permessi negati. Controlla le 'Rules' su Firebase e impostale su 'Modalità Test'.");
             }
         });
     });
@@ -105,7 +106,7 @@ function updateLocalState(key, val) {
     if (activeView.id === 'view-credits') renderCredits();
 }
 
-initSync();
+
 const INITIAL_PRODUCTS = [
     { id: 'crostatina_ciocco', name: 'Crostatina Cioccolato', icon: '🍫', start: 20, restock: 0, sales: 0, type: 'sweet' },
     { id: 'crostatina_albicocca', name: 'Crostatina Albicocca', icon: '🍑', start: 20, restock: 0, sales: 0, type: 'sweet' },
@@ -1914,4 +1915,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnExp.innerText = '📄 Export PDF';
     btnExp.onclick = exportReport;
     document.getElementById('view-home').appendChild(btnExp);
+
+    // Start Sync after UI is ready
+    initSync();
 });
