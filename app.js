@@ -13,27 +13,72 @@ const INITIAL_PRODUCTS = [
 ];
 
 const INITIAL_TEAM = [
-    { id: 1, name: 'Tommaso', salesSweet: 27, salesChip: 8 },
-    { id: 2, name: 'Alessandro', salesSweet: 10, salesChip: 2 },
+    { id: 101, name: 'Tommaso', icon: '🥸', baseSweet: 27, baseChip: 8 },
+    { id: 102, name: 'Andrea', icon: '😑', baseSweet: 13, baseChip: 3 },
+    { id: 103, name: 'Leo', icon: '🥴', baseSweet: 6, baseChip: 3 },
+    { id: 104, name: 'Sofia', icon: '😋', baseSweet: 3, baseChip: 1 },
 ];
 
+const SALARY_RATES = {
+    'sweet': 0.116,
+    'chip': 0.268
+};
+
 const INITIAL_SUBS = [
-    { id: 1, name: 'Sofia 1H', days: [false, false, false, false, false] },
-    { id: 2, name: 'Leonardo 1H', days: [false, false, false, false, false] },
+    { id: 1, name: 'Sofia 1H', days: [false, false, false, false, false], type: 'sweet' },
+    { id: 2, name: 'Leonardo 1H', days: [false, false, false, false, false], type: 'chip' },
 ];
 
 const INITIAL_CREDITS = [
-    { id: 1, name: 'Alexandra 1H', amount: 2.00 },
-    { id: 2, name: 'Fabrizio 5D', amount: 1.00 },
+    { id: 1, name: 'Alexandra 1H', amount: 2.00, paid: false },
+    { id: 2, name: 'Fabrizio 5D', amount: 1.00, paid: false },
 ];
+
+const PRODUCT_COLORS = {
+    'patatina': '#FFD700',
+    'pan_goccole': '#DAA520',
+    'crostatina_ciocco': '#8B4513',
+    'crostatina_albicocca': '#FF69B4'
+};
+const COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0']; // Fallback
 
 // --- APP STATE ---
 let products = DB.get('products', INITIAL_PRODUCTS);
 let team = DB.get('team', INITIAL_TEAM);
+// Force update if baseSweet is missing (Migration to new structure)
+if (team.length === 0 || !team[0].hasOwnProperty('baseSweet')) {
+    team = INITIAL_TEAM;
+    DB.set('team', team);
+}
 let subs = DB.get('subs', INITIAL_SUBS);
+// Migration: Ensure all subs have a type
+if (subs.length > 0 && !subs[0].hasOwnProperty('type')) {
+    subs.forEach(s => s.type = s.type || 'sweet');
+    DB.set('subs', subs);
+}
 let credits = DB.get('credits', INITIAL_CREDITS);
-let transactions = DB.get('transactions', []); // { id, date, type, amount, desc }
-let inventoryHistory = DB.get('inventoryHistory', []); // { date, products: [{id, sales, end...}] }
+let transactions = DB.get('transactions', []);
+let inventoryHistory = DB.get('inventoryHistory', []);
+let teamTransactions = DB.get('teamTransactions', []); // { id, date, memberId, type, qty, amount, paid }
+
+// Initialize Base Transactions if empty
+if (teamTransactions.length === 0) {
+    team.forEach(m => {
+        if (m.baseSweet > 0) {
+            teamTransactions.push({
+                id: `init_${m.id}_s`, date: '2026-01-01', memberId: m.id, type: 'sweet',
+                qty: m.baseSweet, amount: m.baseSweet * SALARY_RATES.sweet, paid: false
+            });
+        }
+        if (m.baseChip > 0) {
+            teamTransactions.push({
+                id: `init_${m.id}_c`, date: '2026-01-01', memberId: m.id, type: 'chip',
+                qty: m.baseChip, amount: m.baseChip * SALARY_RATES.chip, paid: false
+            });
+        }
+    });
+    DB.set('teamTransactions', teamTransactions);
+}
 
 // Migration: Ensure all have IDs
 transactions = transactions.map(t => ({ ...t, id: t.id || Math.random().toString(36).substr(2, 9) }));
@@ -55,8 +100,12 @@ function switchTab(tabName) {
     if (tabName === 'home') renderDashboard();
     if (tabName === 'inventory') renderInventory();
     if (tabName === 'team') renderTeam();
-    if (tabName === 'subs') renderSubs();
+    if (tabName === 'subs') toggleSubsView('active');
     if (tabName === 'credits') renderCredits();
+
+    // Hide Team FAB if not in team view
+    const fab = document.querySelector('.fab-btn');
+    if (fab) fab.style.display = (tabName === 'team' && !currentTeamMemberId) ? 'block' : 'none';
 }
 
 // --- RENDER FUNCTIONS ---
@@ -68,162 +117,162 @@ function loadInventoryDate(date) {
     renderInventory();
 }
 
+
+
 function renderInventory() {
     const list = document.getElementById('inventory-list');
     list.innerHTML = '';
+
+    // --- NEW: Sticky Current Stock Widget ---
+    // Find the latest chronological entry that is NOT PAUSED to show reliable "Real Time" stock
+    const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Find first non-paused entry
+    const latestEntry = sortedHistory.find(h => !h.paused) || sortedHistory[0]; // Fallback to latest if all paused (unlikely)
+
+    if (latestEntry) {
+        const dateObj = new Date(latestEntry.date);
+        const dateStr = dateObj.toLocaleDateString();
+        // Check if this entry is older than today to warn user? Maybe not needed.
+
+        const summaryDiv = document.createElement('div');
+        summaryDiv.className = 'glass-card';
+        summaryDiv.style.marginBottom = '20px';
+        summaryDiv.style.border = '1px solid var(--color-profit)'; // Highlight
+        summaryDiv.innerHTML = `<h3 style="text-align: center; margin-bottom: 10px;">📦 Scorte Attuali (Del ${dateStr})</h3>`;
+
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+        grid.style.gap = '10px';
+
+        latestEntry.products.forEach(p => {
+            const item = document.createElement('div');
+            item.style.textAlign = 'center';
+            item.innerHTML = `
+                <span style="font-size: 1.2rem;">${getProductIcon(p.id)}</span> ${p.name}
+                <div style="font-weight: bold; font-size: 1.1rem; color: var(--color-income);">${p.end}</div>
+            `;
+            grid.appendChild(item);
+        });
+        summaryDiv.appendChild(grid);
+        list.appendChild(summaryDiv);
+    }
+    // ----------------------------------------
 
     // Set date picker value to match current state
     const picker = document.getElementById('inventory-date-picker');
     if (picker) picker.value = currentInventoryDate;
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Determine current entry (Live or History)
+    let entry = inventoryHistory.find(h => h.date === currentInventoryDate);
+    const isToday = currentInventoryDate === new Date().toISOString().split('T')[0];
 
-    const isToday = currentInventoryDate === todayStr;
+    // Auto-create entry for Today if missing
+    if (isToday && !entry) {
+        // Sync Logic: Get latest end from strictly text-sorted previous history
+        let previousEndValues = {};
+        const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const lastEntry = sortedHistory.find(h => h.date < currentInventoryDate);
 
-    // Sync Logic: If viewing/editing Today, ensure Start matches the most recent history End
-    if (isToday) {
-        syncLiveStartWithHistory();
+        if (lastEntry) {
+            lastEntry.products.forEach(p => previousEndValues[p.id] = p.end);
+        } else {
+            INITIAL_PRODUCTS.forEach(p => previousEndValues[p.id] = p.start);
+        }
+
+        entry = {
+            date: currentInventoryDate,
+            products: products.map(p => {
+                const startVal = previousEndValues[p.id] !== undefined ? previousEndValues[p.id] : p.start;
+                return {
+                    id: p.id, name: p.name, start: startVal, restock: 0, end: startVal, sales: 0
+                };
+            })
+        };
+        inventoryHistory.push(entry);
+        DB.set('inventoryHistory', inventoryHistory);
     }
 
-    // Determine Data Source
+    // Prepare Display Data
     let displayProducts = [];
-
-    if (isToday) {
-        displayProducts = products; // Live Data
+    if (entry) {
+        displayProducts = entry.products.map(p => ({ ...p, icon: getProductIcon(p.id) }));
     } else {
-        // Historical Data
-        let entry = inventoryHistory.find(h => h.date === currentInventoryDate);
+        // Fallback for past dates (Virtual View - Read Only or Create on Interaction?)
+        // If we are viewing a past date that doesn't exist, we probably shouldn't CREATE it until user edits.
+        // But for consistency let's show virtual data based on previous day.
+        const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const prevEntry = sortedHistory.find(h => h.date < currentInventoryDate);
 
-        if (!entry) {
-            // Virtual Entry for Backfilling or Planning
-            // Try to find the closest PREVIOUS record to pull "Start" values from
-            const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
-            const prevEntry = sortedHistory.find(h => h.date < currentInventoryDate);
-
-            displayProducts = products.map(p => {
-                let startVal = 0;
-                if (prevEntry) {
-                    const prevP = prevEntry.products.find(hp => hp.id === p.id);
-                    if (prevP) startVal = prevP.end;
-                }
-
-                return {
-                    id: p.id,
-                    name: p.name,
-                    icon: getProductIcon(p.id),
-                    start: startVal,
-                    restock: 0,
-                    end: startVal, // Default to start (no sales yet)
-                    sales: 0
-                };
-            });
-        } else {
-            displayProducts = entry.products.map(p => ({ ...p, icon: getProductIcon(p.id) }));
-        }
+        displayProducts = products.map(p => {
+            let startVal = 0;
+            if (prevEntry) {
+                const prevP = prevEntry.products.find(hp => hp.id === p.id);
+                if (prevP) startVal = prevP.end;
+            } else {
+                // If absolutely no history before this date, use Initial default
+                const initP = INITIAL_PRODUCTS.find(ip => ip.id === p.id);
+                if (initP) startVal = initP.start;
+            }
+            return {
+                id: p.id, name: p.name, icon: getProductIcon(p.id),
+                start: startVal, restock: 0, end: startVal, sales: 0
+            };
+        });
     }
 
     displayProducts.forEach(p => {
-        // Common Logic
-        // In History: p.end is valid. In Live: p.currentEnd is used. 
-        const startVal = p.start;
-        const restockVal = p.restock;
-        const endVal = isToday ? (p.currentEnd !== undefined ? p.currentEnd : (p.start + p.restock)) : p.end;
+        // Calculate Sales
+        const sales = (p.start + p.restock) - p.end;
 
-        // Recalculate sales for display
-        const maxStock = startVal + restockVal;
-        const calculatedSales = maxStock - endVal;
-        const lowStock = endVal < 5 ? `<span style="color: var(--color-expense); font-weight: bold;">⚠ BASSA SCORTA</span>` : '';
+        // Input Controls
+        const restockInput = `<input type="number"
+            value="${p.restock}"
+            style="width: 40px; text-align: center; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px;"
+            onchange="updateHistoryItem('${p.id}', 'restock', this.value)">`;
 
-        // Restock Display: Text in Live (safe), Input in History (edit correction)
-        const restockDisplay = isToday
-            ? `<b>${restockVal}</b>`
-            : `<input type="number" value="${restockVal}" style="width: 40px; text-align: center; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px;" onchange="updateHistoryItem('${p.id}', 'restock', this.value)">`;
+        const startInput = `<input type="number" 
+            value="${p.start}" 
+            style="width: 40px; text-align: center; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px;" 
+            onchange="updateHistoryItem('${p.id}', 'start', this.value)">`;
 
-        // Start Display: Text in Live (safe), Input in History (edit correction)
-        const startDisplay = isToday
-            ? `<b>${startVal}</b>`
-            : `<input type="number" value="${startVal}" style="width: 40px; text-align: center; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px;" onchange="updateHistoryItem('${p.id}', 'start', this.value)">`;
+        const endInput = `<input type="number"
+            value="${p.end}"
+            min="0"
+            style="width: 50px; text-align: center; border-radius: 5px; border: 1px solid #555; background: #222; color: #fff;"
+            onchange="updateHistoryItem('${p.id}', 'end', this.value)">`;
+
 
         const card = document.createElement('div');
         card.className = 'glass-card';
         card.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h3>${p.icon || '📦'} ${p.name}</h3>
-                ${lowStock}
+                ${p.end < 5 ? '<span style="color: var(--color-expense);">⚠</span>' : ''}
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px; text-align: center; font-size: 0.8rem;">
-                <div>Inizio<br>${startDisplay}</div>
-                <div>Riforn.<br>${restockDisplay}</div>
-                <div>Vendite<br><b>${calculatedSales}</b></div>
+                <div>Inizio<br>${startInput}</div>
+                <div>Riforn.<br>${restockInput}</div>
+                <div>Vendite<br><b>${sales}</b></div>
                 <div style="color: var(--color-income)">
                     Rimanenza<br>
-                    <input type="number" 
-                        value="${endVal}" 
-                        min="0" 
-                        max="${maxStock}" /* Note: Max might be violated if editing restock, but loose validation ok here */
-                        style="width: 50px; text-align: center; border-radius: 5px; border: 1px solid #555; background: #222; color: #fff;"
-                        onchange="${isToday ? `updateProductEnd('${p.id}', this.value)` : `updateHistoryItem('${p.id}', 'end', this.value)`}"
-                    >
+                    ${endInput}
                 </div>
             </div>
-            ${isToday ? `
-            <div style="margin-top: 15px; display: flex; gap: 10px;">
-                <button class="btn glass-card" style="flex: 1" onclick="openStockModal('${p.id}', 'restock')">+ Riforn.</button>
-            </div>` : ''}
         `;
         list.appendChild(card);
     });
 
-    // Add Chart Container if not exists
-    if (!document.getElementById('inventoryChart')) {
-        const chartDiv = document.createElement('div');
-        chartDiv.className = 'glass-card';
-        chartDiv.style.marginTop = '20px';
-        chartDiv.innerHTML = `<h2 style="text-align: center;">Andamento Vendite</h2><canvas id="inventoryChartCanvas"></canvas>`;
-        list.parentNode.appendChild(chartDiv);
-    }
+    // Chart
+    const chartDiv = document.createElement('div');
+    chartDiv.className = 'glass-card';
+    chartDiv.style.marginTop = '20px';
+    chartDiv.innerHTML = `<h2 style="text-align: center;">Andamento Vendite</h2><canvas id="inventoryChartCanvas"></canvas>`;
+    list.appendChild(chartDiv);
+
     renderInventoryChart();
 
-    // Add Close Day Button if not exists (Only Today)
-    if (isToday && !document.getElementById('btn-close-day')) {
-        const container = document.createElement('div');
-        container.style.marginTop = '20px';
-        container.style.display = 'flex';
-        container.style.gap = '10px';
-
-        const btnClose = document.createElement('button');
-        btnClose.id = 'btn-close-day';
-        btnClose.className = 'btn';
-        btnClose.style.flex = '2';
-        btnClose.style.background = 'var(--color-profit)';
-        btnClose.style.color = '#000';
-        btnClose.innerText = '🌙 Chiudi Giornata';
-        btnClose.onclick = () => closeDay();
-
-        const btnPause = document.createElement('button');
-        btnPause.className = 'btn glass-card';
-        btnPause.style.flex = '1';
-        btnPause.innerText = '⏸ Pausa';
-        btnPause.onclick = registerPauseDay;
-
-        container.appendChild(btnClose);
-        container.appendChild(btnPause);
-        list.parentNode.appendChild(container);
-    }
-
-    // Add Reset Button if not exists
-    if (!document.getElementById('btn-reset-inv')) {
-        const btn = document.createElement('button');
-        btn.id = 'btn-reset-inv';
-        btn.className = 'btn';
-        btn.style.width = '100%';
-        btn.style.marginTop = '10px';
-        btn.style.background = 'var(--color-expense)'; // Red warning color
-        btn.style.color = '#fff';
-        btn.innerText = '⚠ Reset Totale Magazzino';
-        btn.onclick = resetInventoryData;
-        list.parentNode.appendChild(btn);
-    }
+    // No Pause Button
 }
 
 function getProductIcon(id) {
@@ -263,6 +312,10 @@ function updateHistoryItem(id, field, val) {
     let numVal = parseInt(val);
     if (isNaN(numVal)) numVal = 0;
 
+    // Logic:
+    // Start is calculated, but if we edit it locally (via some other means? removed input), fine.
+    // If we edit RESTOCK or END, Sales change.
+
     if (field === 'start') p.start = numVal;
     if (field === 'restock') p.restock = numVal;
     if (field === 'end') p.end = numVal;
@@ -270,67 +323,52 @@ function updateHistoryItem(id, field, val) {
     // Recalculate Sales
     p.sales = (p.start + p.restock) - p.end;
 
-    DB.set('inventoryHistory', inventoryHistory);
-    renderInventory();
-    renderInventoryChart(); // Update chart
-    renderInventoryChart(); // Update chart
-}
-
-function syncLiveStartWithHistory() {
-    // 1. Sort history by date descending
-    const sortedHistory = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    // 2. Find latest entry strictly before today
-    const todayStr = new Date().toISOString().split('T')[0];
-    const lastEntry = sortedHistory.find(h => h.date < todayStr);
-
-    if (!lastEntry) return; // No history to sync from
-
-    let changed = false;
-    products.forEach(p => {
-        const histP = lastEntry.products.find(hp => hp.id === p.id);
-        if (histP && p.start !== histP.end) {
-            p.start = histP.end;
-            changed = true;
-        }
-    });
-
-    if (changed) {
-        DB.set('products', products);
+    // RIPPLE EFFECT: Propagate to future days
+    if (field === 'end') {
+        propagateStockUsingRipple(entry.date);
+    } else {
+        DB.set('inventoryHistory', inventoryHistory); // Just save strict if no ripple needed
+        renderInventory();
+        renderInventoryChart();
     }
 }
 
-function resetInventoryData() {
-    if (!confirm("ATTENZIONE: Questo azzererà TUTTI i dati del magazzino (Inizio, Rifornimenti, Rimanenze).\nSei sicuro di voler procedere?")) return;
+function propagateStockUsingRipple(changedDateStr) {
+    // 1. Sort history asc
+    let sorted = [...inventoryHistory].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    products.forEach(p => {
-        p.start = 0;
-        p.restock = 0;
-        p.sales = 0;
-        p.currentEnd = 0;
-    });
+    // 2. Find index
+    let idx = sorted.findIndex(h => h.date === changedDateStr);
+    if (idx === -1) return;
 
-    DB.set('products', products);
+    // 3. Loop from next day
+    for (let i = idx + 1; i < sorted.length; i++) {
+        const prevParams = sorted[i - 1].products;
+        const currParams = sorted[i].products;
+
+        currParams.forEach(currP => {
+            const prevP = prevParams.find(p => p.id === currP.id);
+            if (prevP) {
+                // The CORE logic: Next Start = Prev End
+                currP.start = prevP.end;
+                // Since Start changed, Recalculate Sales (Sales = Start + Restock - End)
+                // Assumes End (physical count) is the fixed truth for that day.
+                currP.sales = (currP.start + currP.restock) - currP.end;
+            }
+        });
+    }
+
+    // 4. Save
+    inventoryHistory = sorted; // Updates reference? Localstorage needs pure array
+    DB.set('inventoryHistory', inventoryHistory);
     renderInventory();
-    alert("Magazzino resettato!");
+    renderInventoryChart();
 }
 
+// Replaced by 'openStockModal' but keeping for reference if needed
 function updateProductEnd(id, val) {
-    const p = products.find(p => p.id === id);
-    if (!p) return;
-
-    // Validate
-    const max = p.start + p.restock;
-    let newEnd = parseInt(val);
-    if (newEnd < 0) newEnd = 0;
-    if (newEnd > max) newEnd = max;
-
-    p.currentEnd = newEnd;
-    p.sales = max - newEnd; // Update internal sales tracking too for legacy?
-    // Actually we should store 'sales' as the derived value.
-
-    DB.set('products', products);
-    renderInventory();
+    // Legacy mapping to updateHistoryItem for Today because we treat everything as history/live hybrid now
+    updateHistoryItem(id, 'end', val);
 }
 
 function openStockModal(id, type) {
@@ -377,63 +415,84 @@ function updateStock(id, type, amount) {
     if (!p) return;
 
     if (type === 'restock') {
-        p.restock += amount;
-        // When we add restock, we assume potential stock increases.
-        // Current End should probably increase by same amount to keep Sales constant?
-        // Or does user physically count AFTER restock?
-        // Usually: Restocking puts items on shelf. So End count (what is on shelf) increases.
-        if (p.currentEnd !== undefined) p.currentEnd += amount;
+        // This function is for "live" product restock, which should update the current day's entry.
+        // We need to find the current day's entry and update its restock value.
+        let entry = inventoryHistory.find(h => h.date === currentInventoryDate);
+        if (entry) {
+            const productInEntry = entry.products.find(prod => prod.id === id);
+            if (productInEntry) {
+                productInEntry.restock += amount;
+                // When restock changes, end might need to be adjusted to keep sales consistent,
+                // or we assume end is manually updated. For now, let's just update restock
+                // and let the user adjust end if needed, or let the sales calculation reflect it.
+                // The `updateHistoryItem` function will handle the sales recalculation.
+                // For now, we'll just call updateHistoryItem to trigger the save and re-render.
+                updateHistoryItem(id, 'restock', productInEntry.restock);
+            }
+        }
     }
 
+    // DB.set('products', products); // This line is for the global 'products' array, not inventory history
+    // renderInventory(); // updateHistoryItem already calls this
+}
+
+// --- PRODUCT MANAGEMENT ---
+function openAddProductModal() {
+    const html = `
+        <div class="form-group">
+            <label>Nome Prodotto</label>
+            <input type="text" id="p-name" class="form-input" placeholder="es. Fanta">
+        </div>
+        <div class="form-group">
+            <label>Icona (Emoji)</label>
+            <input type="text" id="p-icon" class="form-input" placeholder="🥤">
+        </div>
+        <div class="form-group">
+            <label>Scorte Iniziali (Giacenza)</label>
+            <input type="number" id="p-stock" class="form-input" value="10" min="0">
+        </div>
+        <div class="form-group">
+            <label>Categoria</label>
+            <select id="p-type" class="form-input">
+                <option value="sweet">🍫 Dolce</option>
+                <option value="chip">🍟 Salato</option>
+            </select>
+        </div>
+        <button class="btn" style="width: 100%; background: var(--color-profit); color: #000; margin-top: 10px;" onclick="saveProduct()">
+            Salva Prodotto
+        </button>
+    `;
+    openModal('Aggiungi Nuovo Prodotto', html);
+}
+
+function saveProduct() {
+    const name = document.getElementById('p-name').value;
+    const icon = document.getElementById('p-icon').value || '📦';
+    const start = parseInt(document.getElementById('p-stock').value) || 0;
+    const type = document.getElementById('p-type').value;
+
+    if (!name) return alert("Inserisci un nome.");
+
+    const newId = name.toLowerCase().replace(/\s+/g, '_');
+
+    // Check if exists
+    if (products.some(p => p.id === newId)) return alert("Un prodotto con questo nome esiste già.");
+
+    const newProd = { id: newId, name, icon, start, restock: 0, sales: 0, type };
+
+    // 1. Add to global products (for future inventory initializations)
+    products.push(newProd);
     DB.set('products', products);
-    renderInventory();
-}
 
-function registerPauseDay() {
-    if (!confirm("Registrare oggi come GIORNO DI PAUSA?\n\n- Nessuna vendita verrà registrata.\n- Le scorte rimarranno invariate per domani.\n- La giornata verrà chiusa.")) return;
-
-    // Force set End = Start (so Sales = 0)
-    products.forEach(p => {
-        p.restock = 0;
-        p.currentEnd = p.start; // No sales
+    // 2. Add to ALL inventory history entries to avoid breakage in ripple/history view
+    inventoryHistory.forEach(h => {
+        h.products.push({ ...newProd });
     });
-
-    closeDay(true); // Call closeDay with skipConfirm = true
-}
-
-function closeDay(skipConfirm = false) {
-    if (!skipConfirm && !confirm("Sicuro di voler chiudere la giornata?\nQuesto salverà i dati attuali e preparerà il magazzino per domani.")) return;
-
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    // 1. Log History
-    const historyEntry = {
-        date: todayStr,
-        products: products.map(p => ({
-            id: p.id,
-            name: p.name,
-            start: p.start,
-            restock: p.restock,
-            end: p.currentEnd,
-            sales: (p.start + p.restock) - p.currentEnd
-        }))
-    };
-    inventoryHistory.push(historyEntry);
     DB.set('inventoryHistory', inventoryHistory);
 
-    // 2. Rotate Days
-    products.forEach(p => {
-        const nextStart = p.currentEnd;
-        p.start = nextStart;
-        p.restock = 0;
-        p.sales = 0; // Reset calculated sales
-        p.currentEnd = nextStart; // Initial assumption for next day
-    });
-    DB.set('products', products);
-
-    alert("Giornata chiusa con successo!");
+    closeModal();
     renderInventory();
-    renderDashboard(); // Update home chart if needed (depends on transaction logic, but we decoupled that)
+    renderDashboard();
 }
 
 let inventoryChart;
@@ -445,32 +504,39 @@ function renderInventoryChart() {
 
     // Prepare datasets
     const allDates = inventoryHistory.map(h => new Date(h.date).toLocaleDateString());
-    // Get unique product IDs
-    const productIds = INITIAL_PRODUCTS.map(p => p.id);
+    // Get last 7 days for chart
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        last7Days.push(d.toISOString().split('T')[0]);
+    }
 
-    const datasets = productIds.map(pid => {
-        const pRef = INITIAL_PRODUCTS.find(p => p.id === pid);
-        const data = inventoryHistory.map(h => {
-            const pHist = h.products.find(hp => hp.id === pid);
-            return pHist ? pHist.sales : 0;
+    // Prepare Datasets
+    const datasets = INITIAL_PRODUCTS.map((prod, index) => {
+        const data = last7Days.map(date => {
+            const entry = inventoryHistory.find(h => h.date === date);
+            if (!entry) return 0;
+            const p = entry.products.find(p => p.id === prod.id);
+            return p ? p.sales : 0;
         });
 
-        // Generate random color or use fixed if defined
-        const color = pRef.type === 'sweet' ? '#FF69B4' : '#FFD700';
+        const color = PRODUCT_COLORS[prod.id] || COLORS[index % COLORS.length];
 
         return {
-            label: pRef.name,
+            label: prod.name,
             data: data,
             borderColor: color,
-            backgroundColor: 'transparent',
-            tension: 0.3
+            backgroundColor: color,
+            tension: 0.3,
+            fill: false
         };
     });
 
     inventoryChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: allDates,
+            labels: last7Days.map(d => new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })),
             datasets: datasets
         },
         options: {
@@ -484,93 +550,604 @@ function renderInventoryChart() {
 
 }
 
+
+let currentTeamMemberId = null; // null = Leaderboard, id = Profile
+
 function renderTeam() {
-    const list = document.getElementById('team-list');
-    list.innerHTML = '';
-    // Sort by total items sold
-    const sortedTeam = [...team].sort((a, b) => (b.salesSweet + b.salesChip) - (a.salesSweet + a.salesChip));
+    const container = document.getElementById('team-list');
+    if (!container) return;
+    container.innerHTML = '';
 
-    sortedTeam.forEach((member, idx) => {
-        const total = member.salesSweet + member.salesChip;
+    if (currentTeamMemberId) {
+        renderMemberProfile(currentTeamMemberId, container);
+    } else {
+        renderTeamLeaderboard(container);
+    }
+}
+
+function renderTeamLeaderboard(container) {
+    const stats = team.map(m => {
+        const myTrans = teamTransactions.filter(t => t.memberId === m.id);
+        const totalQty = myTrans.reduce((sum, t) => sum + t.qty, 0);
+        return { ...m, totalQty };
+    });
+
+    stats.sort((a, b) => b.totalQty - a.totalQty);
+
+    stats.forEach((m, idx) => {
         const rank = idx + 1;
-        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
-
         const div = document.createElement('div');
         div.className = 'glass-card';
         div.style.display = 'flex';
-        div.style.justifyContent = 'space-between';
         div.style.alignItems = 'center';
+        div.style.gap = '15px';
+        div.style.cursor = 'pointer';
+        div.style.marginBottom = '10px';
+        div.onclick = () => {
+            if (selectionStates.team) {
+                const cb = div.querySelector('input[type="checkbox"]');
+                cb.checked = !cb.checked;
+            } else {
+                currentTeamMemberId = m.id; renderTeam();
+            }
+        };
+
         div.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.5rem;">${medal}</span>
-                <div>
-                    <strong>${member.name}</strong><br>
-                    <small style="color: var(--text-secondary)">Totale: ${total}</small>
+            <div style="display: flex; align-items: center; gap: 15px; flex: 1;">
+                ${selectionStates.team ? `<input type="checkbox" class="cb-team" value="${m.id}" style="transform: scale(1.3); margin-right: 5px;">` : ''}
+                <div style="font-size: 1.5rem; width: 30px; text-align: center;">
+                    ${rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '#' + rank}
+                </div>
+                <div style="font-size: 2.5rem;">${m.icon || '👤'}</div>
+                <div style="flex: 1;">
+                    <h3 style="margin: 0;">${m.name}</h3>
+                    <small style="color: var(--text-secondary);">${selectionStates.team ? 'Seleziona per eliminare' : 'Clicca per statistiche e stipendio'}</small>
                 </div>
             </div>
-            <div style="text-align: right; font-size: 0.9rem;">
-                <div>🍫 ${member.salesSweet}</div>
-                <div>🍟 ${member.salesChip}</div>
+            <div style="text-align: right;">
+                <div style="font-size: 1.2rem; font-weight: bold;">${m.totalQty}</div>
+                <small>Vendite</small>
             </div>
         `;
-        list.appendChild(div);
+        container.appendChild(div);
     });
+
+    const existingFab = document.querySelector('.fab-btn');
+    if (existingFab) existingFab.remove();
+
+    const fab = document.createElement('button');
+    fab.innerText = '+';
+    fab.className = 'btn fab-btn';
+    fab.style.position = 'fixed';
+    fab.style.bottom = '85px';
+    fab.style.right = '20px';
+    fab.style.width = '60px';
+    fab.style.height = '60px';
+    fab.style.borderRadius = '50%';
+    fab.style.fontSize = '30px';
+    fab.style.background = 'var(--color-profit)';
+    fab.style.color = '#000';
+    fab.style.zIndex = '999';
+    fab.onclick = openQuickAddTeamModal;
+    document.body.appendChild(fab);
+}
+
+function renderMemberProfile(memberId, container) {
+    const existingFab = document.querySelector('.fab-btn');
+    if (existingFab) existingFab.style.display = 'none';
+
+    const m = team.find(tm => tm.id === memberId);
+    if (!m) return;
+
+    const myTrans = teamTransactions.filter(t => t.memberId === memberId).sort((a, b) => new Date(b.date) - new Date(a.date));
+    const sweetCount = myTrans.filter(t => t.type === 'sweet').reduce((s, t) => s + t.qty, 0);
+    const chipCount = myTrans.filter(t => t.type === 'chip').reduce((s, t) => s + t.qty, 0);
+    const unpaid = myTrans.filter(t => !t.paid).reduce((s, t) => s + t.amount, 0);
+    const totalEarnings = myTrans.reduce((s, t) => s + t.amount, 0);
+
+    container.innerHTML = `
+        <button class="btn" style="margin-bottom: 20px; background: rgba(255,255,255,0.1);" onclick="currentTeamMemberId=null; renderTeam();">
+            ⬅ Torna alla Classifica
+        </button>
+        
+        <div class="glass-card" style="text-align: center; margin-bottom: 20px;">
+            <div style="font-size: 4rem;">${m.icon || '👤'}</div>
+            <h2>${m.name}</h2>
+            <div style="color: var(--color-income); font-weight: bold; margin-top: 5px;">
+                ${(sweetCount + chipCount) > 20 ? '🏆 Top Seller' : (sweetCount + chipCount) > 5 ? '⭐ Rising Star' : ''}
+            </div>
+        </div>
+
+        <div class="glass-card" style="margin-bottom: 20px; border: 1px solid var(--color-profit);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0;">Portafoglio</h3>
+                    <small>Da Saldare</small>
+                </div>
+                <div style="font-size: 1.5rem; font-weight: bold;">€${unpaid.toFixed(2)}</div>
+            </div>
+            ${unpaid > 0 ? `<button class="btn" style="width: 100%; margin-top: 15px; background: var(--color-profit); color: #000;" onclick="payMember(${m.id})">💰 Segna come Pagato</button>` : ''}
+            <div style="text-align: center; margin-top: 10px; font-size: 0.8rem; opacity: 0.7;">Guadagni Totali: €${totalEarnings.toFixed(2)}</div>
+        </div>
+
+        <div class="glass-card" style="margin-bottom: 20px;">
+            <h3>Dettagli Vendite</h3>
+            <canvas id="memberPieChart" height="200"></canvas>
+        </div>
+
+        <h3>Storico</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            ${myTrans.map(t => `
+                <div class="glass-card" style="padding: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="openEditTeamTransactionModal('${t.id}')">
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold;">${t.type === 'sweet' ? '🍫 Dolce' : '🍟 Salato'} x${t.qty}</div>
+                        <small>${new Date(t.date).toLocaleDateString()}</small>
+                    </div>
+                    <div style="text-align: right; display: flex; align-items: center; gap: 10px;">
+                        <div>
+                            <div style="font-weight: bold;">+€${t.amount.toFixed(2)}</div>
+                            <small style="color: ${t.paid ? 'var(--color-profit)' : '#ff9f43'}">${t.paid ? 'PAGATO' : 'DA SALDARE'}</small>
+                        </div>
+                        <button class="btn-icon" onclick="event.stopPropagation(); deleteTeamTransaction('${t.id}')" style="background: none; border: none; font-size: 1.1rem; cursor: pointer;">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    setTimeout(() => {
+        const ctx = document.getElementById('memberPieChart');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Dolce 🍫', 'Salato 🍟'],
+                    datasets: [{
+                        data: [sweetCount, chipCount],
+                        backgroundColor: [PRODUCT_COLORS.crostatina_ciocco, PRODUCT_COLORS.patatina],
+                        borderWidth: 0
+                    }]
+                },
+                options: { responsive: true, cutout: '65%' }
+            });
+        }
+    }, 50);
+}
+
+function openQuickAddTeamModal() {
+    const today = new Date().toISOString().split('T')[0];
+    const html = `
+        <div class="form-group">
+            <label>Chi ha venduto?</label>
+            <select id="qa-member" class="form-input">
+                ${team.map(m => `<option value="${m.id}">${m.icon} ${m.name}</option>`).join('')}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Cosa?</label>
+            <div style="display: flex; gap: 10px;">
+                <div id="btn-qa-sweet" onclick="setQaType('sweet')" style="flex: 1; padding: 10px; border: 2px solid var(--color-profit); border-radius: 10px; text-align: center; cursor: pointer; background: rgba(0,184,148,0.1);">
+                    <div style="font-size: 1.5rem;">🍫</div> Dolce
+                </div>
+                <div id="btn-qa-chip" onclick="setQaType('chip')" style="flex: 1; padding: 10px; border: 2px solid #555; border-radius: 10px; text-align: center; cursor: pointer;">
+                    <div style="font-size: 1.5rem;">🍟</div> Salato
+                </div>
+            </div>
+            <input type="hidden" id="qa-type" value="sweet">
+        </div>
+        <div class="form-group">
+            <label>Quantità</label>
+            <input type="number" id="qa-qty" class="form-input" value="1" min="1">
+        </div>
+        <div class="form-group">
+            <label>Data</label>
+            <input type="date" id="qa-date" class="form-input" value="${today}">
+        </div>
+        <button class="btn" style="width: 100%; background: var(--color-profit); color: #000; margin-top: 10px;" onclick="confirmQuickTeamAdd()">✅ Registra</button>
+    `;
+    openModal("Vendita Rapida", html);
+}
+
+function setQaType(type) {
+    document.getElementById('qa-type').value = type;
+    document.getElementById('btn-qa-sweet').style.borderColor = type === 'sweet' ? 'var(--color-profit)' : '#555';
+    document.getElementById('btn-qa-sweet').style.background = type === 'sweet' ? 'rgba(0,184,148,0.1)' : 'transparent';
+    document.getElementById('btn-qa-chip').style.borderColor = type === 'chip' ? 'var(--color-profit)' : '#555';
+    document.getElementById('btn-qa-chip').style.background = type === 'chip' ? 'rgba(0,184,148,0.1)' : 'transparent';
+}
+
+function confirmQuickTeamAdd() {
+    const mId = parseInt(document.getElementById('qa-member').value);
+    const type = document.getElementById('qa-type').value;
+    const qty = parseInt(document.getElementById('qa-qty').value) || 1;
+    const date = document.getElementById('qa-date').value;
+
+    const rate = type === 'sweet' ? SALARY_RATES.sweet : SALARY_RATES.chip;
+    teamTransactions.push({
+        id: 't' + Date.now(),
+        date,
+        memberId: mId,
+        type,
+        qty,
+        amount: qty * rate,
+        paid: false
+    });
+
+    DB.set('teamTransactions', teamTransactions);
+    closeModal();
+    renderTeam();
+}
+
+function payMember(memberId) {
+    if (confirm("Confermi di aver pagato il saldo?")) {
+        teamTransactions.forEach(t => { if (t.memberId === memberId) t.paid = true; });
+        DB.set('teamTransactions', teamTransactions);
+        renderTeam();
+    }
+}
+
+function deleteTeamTransaction(id) {
+    if (!confirm("Sicuro di voler eliminare questa vendita?")) return;
+    teamTransactions = teamTransactions.filter(t => t.id !== id);
+    DB.set('teamTransactions', teamTransactions);
+    renderTeam();
+}
+
+function openEditTeamTransactionModal(id) {
+    const t = teamTransactions.find(t => t.id === id);
+    if (!t) return;
+
+    const html = `
+        <input type="hidden" id="te-id" value="${t.id}">
+        <div class="form-group">
+            <label>Tipo Prodotto</label>
+            <select id="te-type" class="form-input">
+                <option value="sweet" ${t.type === 'sweet' ? 'selected' : ''}>🍫 Dolce</option>
+                <option value="chip" ${t.type === 'chip' ? 'selected' : ''}>🍟 Salato</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Quantità</label>
+            <input type="number" id="te-qty" class="form-input" value="${t.qty}" min="1">
+        </div>
+        <div class="form-group">
+            <label>Data</label>
+            <input type="date" id="te-date" class="form-input" value="${t.date}">
+        </div>
+        <div class="form-group">
+            <label>Stato Pagamento</label>
+            <select id="te-paid" class="form-input">
+                <option value="false" ${!t.paid ? 'selected' : ''}>❌ Non Pagato (In Sospeso)</option>
+                <option value="true" ${t.paid ? 'selected' : ''}>✅ Pagato</option>
+            </select>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button class="btn" style="flex: 1; background: var(--color-profit); color: #000;" onclick="saveTeamTransaction()">
+                Salva Modifiche
+            </button>
+        </div>
+    `;
+    openModal('Modifica Vendita', html);
+}
+
+function saveTeamTransaction() {
+    const id = document.getElementById('te-id').value;
+    const type = document.getElementById('te-type').value;
+    const qty = parseInt(document.getElementById('te-qty').value) || 1;
+    const date = document.getElementById('te-date').value;
+    const paid = document.getElementById('te-paid').value === 'true';
+
+    const t = teamTransactions.find(t => t.id === id);
+    if (t) {
+        t.type = type;
+        t.qty = qty;
+        t.date = date;
+        t.paid = paid;
+        t.amount = qty * (type === 'sweet' ? SALARY_RATES.sweet : SALARY_RATES.chip);
+
+        DB.set('teamTransactions', teamTransactions);
+        closeModal();
+        renderTeam();
+    }
+}
+
+let currentSubsView = 'active'; // 'active' or 'registry'
+
+function toggleSubsView(view) {
+    currentSubsView = view;
+    // Update button styles
+    document.getElementById('btn-subs-active').style.background = view === 'active' ? 'var(--color-profit)' : 'transparent';
+    document.getElementById('btn-subs-active').style.color = view === 'active' ? '#000' : '#fff';
+    document.getElementById('btn-subs-registry').style.background = view === 'registry' ? 'var(--color-profit)' : 'transparent';
+    document.getElementById('btn-subs-registry').style.color = view === 'registry' ? '#000' : '#fff';
+
+    // Hide controls if in registry
+    document.getElementById('subs-controls').style.display = view === 'active' ? 'block' : 'none';
+
+    renderSubs();
 }
 
 function renderSubs() {
     const list = document.getElementById('subs-list');
+    if (!list) return;
     list.innerHTML = '';
-    subs.forEach(sub => {
-        const div = document.createElement('div');
-        div.className = 'glass-card';
-        div.innerHTML = `
-            <div style="margin-bottom: 10px; font-weight: bold;">${sub.name}</div>
-            <div style="display: flex; justify-content: space-between;">
-                ${sub.days.map((checked, i) => `
-                    <div 
-                        onclick="toggleSubDay('${sub.id}', ${i})"
-                        style="
-                            width: 30px; height: 30px; 
-                            border: 2px solid ${checked ? 'var(--color-profit)' : '#fff'}; 
-                            background: ${checked ? 'var(--color-profit)' : 'transparent'};
-                            border-radius: 6px; cursor: pointer;
-                        "
-                    ></div>
-                `).join('')}
-            </div>
-        `;
-        list.appendChild(div);
+
+    // Filter based on view
+    const filteredSubs = subs.filter(s => {
+        const isFinished = s.days.every(d => d === true);
+        return currentSubsView === 'active' ? !isFinished : isFinished;
     });
+
+    if (filteredSubs.length === 0) {
+        list.innerHTML = `<p style="text-align: center; opacity: 0.5; margin-top: 20px;">
+            ${currentSubsView === 'active' ? 'Nessun abbonamento attivo.' : 'Il registro è vuoto.'}
+        </p>`;
+        return;
+    }
+
+    // Group by category if in 'active' view
+    if (currentSubsView === 'active') {
+        const sections = [
+            { id: 'sweet', name: '🍫 Crostatine', color: PRODUCT_COLORS.crostatina_ciocco },
+            { id: 'chip', name: '🍟 Patatine', color: PRODUCT_COLORS.patatina }
+        ];
+
+        sections.forEach(sec => {
+            const secSubs = filteredSubs.filter(s => s.type === sec.id);
+            if (secSubs.length > 0) {
+                const title = document.createElement('h3');
+                title.innerHTML = sec.name;
+                title.style.margin = '20px 0 10px 0';
+                title.style.borderLeft = `4px solid ${sec.color}`;
+                title.style.paddingLeft = '10px';
+                list.appendChild(title);
+
+                secSubs.forEach(sub => list.appendChild(createSubCard(sub)));
+            }
+        });
+    } else {
+        // Registry view - just a list
+        filteredSubs.forEach(sub => list.appendChild(createSubCard(sub)));
+    }
+}
+
+function createSubCard(sub) {
+    const div = document.createElement('div');
+    div.className = 'glass-card';
+    div.style.marginBottom = '10px';
+    div.style.cursor = selectionStates.subs ? 'pointer' : 'default';
+
+    if (selectionStates.subs) {
+        div.onclick = () => {
+            const cb = div.querySelector('input[type="checkbox"]');
+            cb.checked = !cb.checked;
+        };
+    }
+
+    div.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                ${selectionStates.subs ? `<input type="checkbox" class="cb-subs" value="${sub.id}" style="transform: scale(1.3);">` : ''}
+                <div style="font-weight: bold; font-size: 1.1rem;">
+                    ${sub.type === 'sweet' ? '🍫' : '🍟'} ${sub.name}
+                </div>
+            </div>
+            ${currentSubsView === 'active' ? '' : `
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--color-profit); font-size: 0.8rem; font-weight: bold;">COMPLETATO ✅</span>
+                    <button class="btn-icon" onclick="restoreSub('${sub.id}')" title="Ripristina in Attivi" style="background:none; border:none; cursor:pointer; font-size:1rem; opacity: 0.7;">🔄</button>
+                </div>
+            `}
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 5px; ${selectionStates.subs ? 'pointer-events: none; opacity: 0.5;' : ''}">
+            ${sub.days.map((checked, i) => {
+        const daysLabels = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven'];
+        return `
+                    <div style="text-align: center; flex: 1;">
+                        <div 
+                            onclick="${currentSubsView === 'active' ? `toggleSubDay('${sub.id}', ${i})` : ''}"
+                            style="
+                                height: 35px; 
+                                border: 2px solid ${checked ? 'var(--color-profit)' : '#555'}; 
+                                background: ${checked ? 'var(--color-profit)' : 'rgba(255,255,255,0.05)'};
+                                border-radius: 8px; cursor: ${currentSubsView === 'active' ? 'pointer' : 'default'};
+                                display: flex; align-items: center; justify-content: center;
+                                transition: 0.2s;
+                            "
+                        >
+                            ${checked ? '<span style="color: #000; font-weight: bold;">✓</span>' : ''}
+                        </div>
+                        <small style="font-size: 0.7rem; opacity: 0.6; margin-top: 4px; display: block;">${daysLabels[i]}</small>
+                    </div>
+                `;
+    }).join('')}
+        </div>
+    `;
+    return div;
 }
 
 function toggleSubDay(id, dayIdx) {
-    const s = subs.find(s => s.id == id); // loose match for id
+    const s = subs.find(s => s.id == id);
     if (s) {
         s.days[dayIdx] = !s.days[dayIdx];
         DB.set('subs', subs);
+
+        // If just finished, maybe show a little celebration or just re-render
+        const isFinished = s.days.every(d => d === true);
+        if (isFinished) {
+            // Wait a bit to show the last check before it disappears
+            setTimeout(() => {
+                alert(`Complimenti! ${s.name} ha completato l'abbonamento settimanale. Spostato nel Registro.`);
+                renderSubs();
+            }, 300);
+        } else {
+            renderSubs();
+        }
+    }
+}
+
+function openAddSubModal() {
+    const html = `
+        <div class="form-group">
+            <label>Nome Abbonato e Classe</label>
+            <input type="text" id="sub-name" class="form-input" placeholder="Es. Mario Rossi 4B">
+        </div>
+        <div class="form-group">
+            <label>Tipo Abbonamento</label>
+            <div style="display: flex; gap: 10px; margin-top: 5px;">
+                <div id="btn-sub-sweet" onclick="selectSubModType('sweet')" style="flex: 1; padding: 15px; border: 2px solid var(--color-profit); border-radius: 12px; text-align: center; cursor: pointer; background: rgba(0, 184, 148, 0.1);">
+                    <div style="font-size: 1.5rem;">🍫</div>
+                    <div style="font-size: 0.9rem; margin-top: 5px;">Dolce</div>
+                </div>
+                <div id="btn-sub-chip" onclick="selectSubModType('chip')" style="flex: 1; padding: 15px; border: 2px solid #555; border-radius: 12px; text-align: center; cursor: pointer;">
+                    <div style="font-size: 1.8rem;">🍟</div>
+                    <div style="font-size: 0.9rem; margin-top: 5px;">Salato</div>
+                </div>
+            </div>
+            <input type="hidden" id="sub-type" value="sweet">
+        </div>
+        <button class="btn" style="width: 100%; background: var(--color-profit); color: #000; font-weight: bold; margin-top: 15px;" onclick="saveSub()">
+            AGGIUNGI
+        </button>
+    `;
+    openModal("Nuovo Abbonato", html);
+}
+
+function selectSubModType(type) {
+    document.getElementById('sub-type').value = type;
+    const sweetBtn = document.getElementById('btn-sub-sweet');
+    const chipBtn = document.getElementById('btn-sub-chip');
+
+    if (type === 'sweet') {
+        sweetBtn.style.borderColor = 'var(--color-profit)';
+        sweetBtn.style.background = 'rgba(0, 184, 148, 0.1)';
+        chipBtn.style.borderColor = '#555';
+        chipBtn.style.background = 'transparent';
+    } else {
+        chipBtn.style.borderColor = 'var(--color-profit)';
+        chipBtn.style.background = 'rgba(0, 184, 148, 0.1)';
+        sweetBtn.style.borderColor = '#555';
+        sweetBtn.style.background = 'transparent';
+    }
+}
+
+function saveSub() {
+    const name = document.getElementById('sub-name').value;
+    const type = document.getElementById('sub-type').value;
+    if (!name) return alert("Inserisci un nome.");
+
+    const newSub = {
+        id: Date.now(),
+        name: name,
+        type: type,
+        days: [false, false, false, false, false]
+    };
+
+    subs.push(newSub);
+    DB.set('subs', subs);
+    closeModal();
+    renderSubs();
+}
+
+function deleteSub(id) {
+    if (!confirm("Vuoi eliminare questo abbonamento?")) return;
+    subs = subs.filter(s => s.id != id);
+    DB.set('subs', subs);
+    renderSubs();
+}
+
+function restoreSub(id) {
+    const s = subs.find(s => s.id == id);
+    if (s) {
+        // Uncheck the last day to make it "incomplete" and return to active
+        s.days[4] = false;
+        DB.set('subs', subs);
+        alert(`${s.name} riportato in Abbonamenti Attivi.`);
         renderSubs();
     }
 }
 
+function resetWeekSubs() {
+    if (!confirm("Vuoi resettare tutti gli abbonamenti settimanali?")) return;
+
+    // We can either reset all of them to unchecked (staying active)
+    // or we can archive the ones that were partially finished?
+    // User asked "Reset", so let's just uncheck everything in the ACTIVE list.
+    // Actually, usually reset means start a new week.
+    // Let's reset the 'days' array for all subscribers.
+    subs.forEach(s => {
+        s.days = [false, false, false, false, false];
+    });
+    DB.set('subs', subs);
+    renderSubs();
+}
+
 function renderCredits() {
     const list = document.getElementById('credits-list');
+    if (!list) return;
     list.innerHTML = '';
+
     credits.forEach(c => {
         const div = document.createElement('div');
         div.className = 'glass-card';
         div.style.display = 'flex';
         div.style.justifyContent = 'space-between';
         div.style.alignItems = 'center';
+        div.style.opacity = c.paid ? '0.6' : '1';
+        div.style.cursor = selectionStates.credits ? 'pointer' : 'default';
+
+        if (selectionStates.credits) {
+            div.onclick = () => {
+                const cb = div.querySelector('input[type="checkbox"]');
+                cb.checked = !cb.checked;
+            };
+        }
+
         div.innerHTML = `
-            <div>
-                <strong>${c.name}</strong>
+            <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                ${selectionStates.credits ? `<input type="checkbox" class="cb-credits" value="${c.id}" style="transform: scale(1.3); margin-right: 5px;">` : ''}
+                <div 
+                    onclick="${selectionStates.credits ? '' : `toggleCreditPaid('${c.id}')`}"
+                    style="
+                        width: 24px; height: 24px; 
+                        border: 2px solid ${c.paid ? 'var(--color-profit)' : '#888'}; 
+                        background: ${c.paid ? 'var(--color-profit)' : 'transparent'};
+                        border-radius: 6px; cursor: pointer;
+                        display: flex; align-items: center; justify-content: center;
+                        transition: 0.2s;
+                        ${selectionStates.credits ? 'pointer-events: none;' : ''}
+                    "
+                >
+                    ${c.paid ? '<span style="color: #000; font-weight: bold; font-size: 0.8rem;">✓</span>' : ''}
+                </div>
+                <div style="text-decoration: ${c.paid ? 'line-through' : 'none'};">
+                    <strong>${c.name}</strong>
+                </div>
             </div>
-            <div style="color: var(--color-expense); font-weight: bold;">
+            <div style="color: var(--color-expense); font-weight: bold; font-size: 1rem; text-align: right;">
                 €${c.amount.toFixed(2)}
             </div>
         `;
         list.appendChild(div);
     });
+}
+
+function toggleCreditPaid(id) {
+    const c = credits.find(cr => cr.id == id);
+    if (c) {
+        c.paid = !c.paid;
+        DB.set('credits', credits);
+        renderCredits();
+    }
+}
+
+function deleteCredit(id) {
+    if (!confirm("Sicuro di voler eliminare questo credito?")) return;
+    credits = credits.filter(c => c.id != id);
+    DB.set('credits', credits);
+    renderCredits();
 }
 
 function renderDashboard() {
@@ -589,35 +1166,60 @@ function renderDashboard() {
 
 
 
-let isSelectionMode = false;
+let selectionStates = {
+    home: false,
+    team: false,
+    subs: false,
+    credits: false
+};
 
-function toggleSelectionMode() {
-    isSelectionMode = !isSelectionMode;
-    const btn = document.querySelector('#view-home h2 + button'); // Select button relative to header
-    // Or just find by text in a simpler app, or give ID next time. 
-    // Let's use simpler text toggle for the button found in the header area logic if we had ID.
-    // Since we didn't give ID to button, we can re-render to update UI or just manipulate DOM.
-    // Let's update text content simply by querying.
-    const selectBtn = document.querySelector('button[onclick="toggleSelectionMode()"]');
-    if (selectBtn) selectBtn.innerText = isSelectionMode ? 'Annulla' : 'Seleziona';
+function toggleSelectionMode(view) {
+    selectionStates[view] = !selectionStates[view];
 
-    document.getElementById('bulk-actions').style.display = isSelectionMode ? 'block' : 'none';
-    renderTransactions();
+    // Update Action Bar visibility
+    const actionBar = document.getElementById(`bulk-actions-${view}`);
+    if (actionBar) actionBar.style.display = selectionStates[view] ? 'block' : 'none';
+
+    // Update trigger button text if needed
+    const selectBtn = document.querySelector(`button[onclick="toggleSelectionMode('${view}')"]`);
+    if (selectBtn) selectBtn.innerText = selectionStates[view] ? 'Annulla' : 'Seleziona';
+
+    // Re-render
+    if (view === 'home') renderDashboard();
+    if (view === 'team') renderTeam();
+    if (view === 'subs') renderSubs();
+    if (view === 'credits') renderCredits();
 }
 
-function deleteSelectedTransactions() {
-    const checkboxes = document.querySelectorAll('.t-checkbox:checked');
-    if (checkboxes.length === 0) return alert("Nessuna transazione selezionata.");
+function bulkDelete(view) {
+    const checkboxes = document.querySelectorAll(`.cb-${view}:checked`);
+    if (checkboxes.length === 0) return alert("Nessun elemento selezionato.");
 
-    if (!confirm(`Vuoi eliminare ${checkboxes.length} transazioni?`)) return;
+    if (!confirm(`Sicuro di voler eliminare ${checkboxes.length} elementi?`)) return;
 
     const idsToDelete = Array.from(checkboxes).map(cb => cb.value);
-    transactions = transactions.filter(t => !idsToDelete.includes(t.id));
 
-    DB.set('transactions', transactions);
-    toggleSelectionMode(); // Exit selection mode
-    renderDashboard();
+    if (view === 'home') {
+        transactions = transactions.filter(t => !idsToDelete.includes(t.id));
+        DB.set('transactions', transactions);
+        renderDashboard();
+    } else if (view === 'team') {
+        team = team.filter(m => !idsToDelete.includes(m.id.toString()));
+        DB.set('team', team);
+        renderTeam();
+    } else if (view === 'subs') {
+        subs = subs.filter(s => !idsToDelete.includes(s.id.toString()));
+        DB.set('subs', subs);
+        renderSubs();
+    } else if (view === 'credits') {
+        credits = credits.filter(c => !idsToDelete.includes(c.id.toString()));
+        DB.set('credits', credits);
+        renderCredits();
+    }
+
+    toggleSelectionMode(view); // Exit mode
 }
+
 
 function renderTransactions() {
     const list = document.getElementById('transaction-list');
@@ -633,38 +1235,28 @@ function renderTransactions() {
         div.style.display = 'flex';
         div.style.justifyContent = 'space-between';
         div.style.alignItems = 'center';
-        div.style.cursor = 'pointer';
-
-        // If NOT in selection mode, click to edit. If IN selection mode, click to toggle checkbox (handled by label/input).
-        if (!isSelectionMode) {
-            div.onclick = () => openEditTransactionModal(t.id);
-        } else {
-            // Optional: make whole card clickable to check box
+        if (selectionStates.home) {
             div.onclick = (e) => {
-                if (e.target.type !== 'checkbox') {
-                    const cb = div.querySelector('input[type="checkbox"]');
-                    cb.checked = !cb.checked;
-                }
+                const cb = div.querySelector('input[type="checkbox"]');
+                if (e.target !== cb) cb.checked = !cb.checked;
             };
+        } else {
+            div.onclick = () => openEditTransactionModal(t.id);
         }
 
         const dateStr = new Date(t.date).toLocaleDateString();
         const amountColor = t.type === 'income' ? 'var(--color-profit)' : 'var(--color-expense)';
         const sign = t.type === 'income' ? '+' : '-';
 
-        const checkboxHtml = isSelectionMode ? `
-            <input type="checkbox" class="t-checkbox" value="${t.id}" style="transform: scale(1.5); margin-right: 15px;">
-        ` : '';
-
         div.innerHTML = `
-            <div style="display: flex; align-items: center;">
-                ${checkboxHtml}
-                <div>
+            <div style="display: flex; align-items: center; flex: 1; gap: 15px;">
+                ${selectionStates.home ? `<input type="checkbox" class="cb-home" value="${t.id}" style="transform: scale(1.3);">` : ''}
+                <div style="flex: 1;">
                     <div style="font-weight: bold;">${t.desc}</div>
                     <small style="color: var(--text-secondary)">${dateStr}</small>
                 </div>
             </div>
-            <div style="color: ${amountColor}; font-weight: bold; font-size: 1.1rem;">
+            <div style="color: ${amountColor}; font-weight: bold; font-size: 1.1rem; text-align: right;">
                 ${sign}€${t.amount.toFixed(2)}
             </div>
         `;
@@ -924,7 +1516,15 @@ function addEmployeePrompt() {
 function saveEmployee() {
     const name = document.getElementById('e-name').value;
     if (name) {
-        team.push({ id: Date.now(), name, salesSweet: 0, salesChip: 0 });
+        team.push({
+            id: Date.now().toString(),
+            name,
+            icon: '👤',
+            baseSweet: 0,
+            baseChip: 0,
+            salesSweet: 0, // Legacy
+            salesChip: 0   // Legacy
+        });
         DB.set('team', team);
         renderTeam();
         closeModal();
@@ -950,7 +1550,7 @@ function saveCredit() {
     const name = document.getElementById('c-name').value;
     const amount = parseFloat(document.getElementById('c-amount').value);
     if (name && amount) {
-        credits.push({ id: Date.now(), name, amount });
+        credits.push({ id: Date.now(), name, amount, paid: false });
         DB.set('credits', credits);
         renderCredits();
         closeModal();
@@ -959,7 +1559,6 @@ function saveCredit() {
 
 // --- EXPORT ---
 async function exportReport() {
-    // Check if jsPDF is loaded
     if (!window.jspdf) {
         alert("Errore: Libreria PDF non caricata. Controlla la connessione internet.");
         return;
@@ -967,34 +1566,139 @@ async function exportReport() {
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
+    let y = 20;
+    const margin = 20;
+    const pageHeight = doc.internal.pageSize.height;
+
+    function checkPageBreak(needed = 10) {
+        if (y + needed > pageHeight - margin) {
+            doc.addPage();
+            y = 20;
+        }
+    }
 
     // Header
     doc.setFontSize(22);
-    doc.text("Business-Patatine Manager", 20, 20);
+    doc.setTextColor(0, 184, 148); // var(--color-profit)
+    doc.text("Business-Patatine Manager", margin, y);
+    y += 10;
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Report generato il: ${new Date().toLocaleString()}`, margin, y);
+    y += 15;
+
+    // 1. FINANCIAL SUMMARY
+    doc.setFontSize(16);
+    doc.setTextColor(0);
+    doc.text("1. BILANCIO GENERALE", margin, y);
+    y += 10;
+
+    const income = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const expense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const profit = income - expense;
 
     doc.setFontSize(12);
-    doc.text(`Data: ${new Date().toLocaleDateString()}`, 20, 30);
+    doc.text(`Entrate Totali: €${income.toFixed(2)}`, margin + 5, y); y += 7;
+    doc.text(`Spese Totali: €${expense.toFixed(2)}`, margin + 5, y); y += 7;
+    doc.setFont(undefined, 'bold');
+    doc.text(`Profitto Netto: €${profit.toFixed(2)}`, margin + 5, y);
+    doc.setFont(undefined, 'normal');
+    y += 15;
 
-    // Financials
-    const income = parseFloat(document.getElementById('val-income').innerText.replace('€', '') || "0");
-    const expense = parseFloat(document.getElementById('val-expense').innerText.replace('€', '') || "0");
-    const profit = parseFloat(document.getElementById('val-profit').innerText.replace('€', '') || "0");
+    // 2. TRANSACTION HISTORY
+    checkPageBreak(20);
+    doc.setFontSize(16);
+    doc.text("2. STORICO TRANSAZIONI", margin, y);
+    y += 10;
+    doc.setFontSize(10);
 
-    doc.text("BILANCIO:", 20, 45);
-    doc.text(`Entrate: ${income.toFixed(2)} euro`, 20, 55);
-    doc.text(`Spese: ${expense.toFixed(2)} euro`, 20, 65);
-    doc.text(`Profitto Netto: ${profit.toFixed(2)} euro`, 20, 75);
+    const sortedT = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+    sortedT.forEach(t => {
+        checkPageBreak(7);
+        const date = new Date(t.date).toLocaleDateString();
+        const line = `${date} - ${t.desc}: ${t.type === 'income' ? '+' : '-'}€${t.amount.toFixed(2)}`;
+        doc.text(line, margin + 5, y);
+        y += 7;
+    });
+    y += 10;
 
-    // Best Sellers / Team
-    doc.text("TOP VENDITORI:", 20, 90);
-    const topSeller = [...team].sort((a, b) => (b.salesSweet + b.salesChip) - (a.salesSweet + a.salesChip))[0];
-    if (topSeller) {
-        doc.text(`1. ${topSeller.name} (${topSeller.salesSweet + topSeller.salesChip} vendite)`, 20, 100);
+    // 3. INVENTORY
+    checkPageBreak(20);
+    doc.setFontSize(16);
+    doc.text("3. STATO INVENTARIO", margin, y);
+    y += 10;
+    doc.setFontSize(10);
+
+    // Get latest real stock from history
+    const sortedInv = [...inventoryHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const latestInv = sortedInv.find(h => !h.paused) || sortedInv[0];
+
+    if (latestInv) {
+        latestInv.products.forEach(p => {
+            checkPageBreak(7);
+            const stock = p.start + p.restock - p.sales;
+            doc.text(`${p.name}: ${stock} unita' rimaste`, margin + 5, y);
+            y += 7;
+        });
     } else {
-        doc.text("Nessun dato di vendita.", 20, 100);
+        // Fallback to base products if no history
+        products.forEach(p => {
+            checkPageBreak(7);
+            const stock = p.start + p.restock - p.sales;
+            doc.text(`${p.name}: ${stock} unita' rimaste`, margin + 5, y);
+            y += 7;
+        });
     }
+    y += 10;
 
-    doc.save("report-settimanale.pdf");
+    // 4. TEAM & PERFORMANCE
+    checkPageBreak(20);
+    doc.setFontSize(16);
+    doc.text("4. TEAM E PORTAFOGLI", margin, y);
+    y += 10;
+    team.forEach(m => {
+        checkPageBreak(15);
+        const mTrans = teamTransactions.filter(tt => tt.memberId === m.id);
+        const unpaid = mTrans.filter(tt => !tt.paid).reduce((s, tt) => s + tt.amount, 0);
+        const totalSales = mTrans.reduce((s, tt) => s + tt.qty, 0);
+
+        doc.setFont(undefined, 'bold');
+        doc.text(`${m.name}:`, margin + 5, y);
+        doc.setFont(undefined, 'normal');
+        doc.text(`   Vendite totali: ${totalSales} | Da pagare: €${unpaid.toFixed(2)}`, margin + 30, y);
+        y += 8;
+    });
+    y += 10;
+
+    // 5. SUBSCRIPTIONS
+    checkPageBreak(20);
+    doc.setFontSize(16);
+    doc.text("5. ABBONAMENTI SETTIMANALI", margin, y);
+    y += 10;
+    doc.setFontSize(10);
+    subs.forEach(s => {
+        checkPageBreak(7);
+        const done = s.days.filter(d => d).length;
+        const type = s.type === 'sweet' ? 'Dolce' : 'Salato';
+        doc.text(`${s.name} (${type}): ${done}/5 giorni completati`, margin + 5, y);
+        y += 7;
+    });
+    y += 10;
+
+    // 6. CREDITS
+    checkPageBreak(20);
+    doc.setFontSize(16);
+    doc.text("6. REGISTRO CREDITI", margin, y);
+    y += 10;
+    doc.setFontSize(10);
+    credits.forEach(c => {
+        checkPageBreak(7);
+        doc.text(`${c.name}: €${c.amount.toFixed(2)} [${c.paid ? 'RISARCITO' : 'DA RISARCIRE'}]`, margin + 5, y);
+        y += 7;
+    });
+
+    doc.save(`report-completo-${new Date().toISOString().split('T')[0]}.pdf`);
 }
 
 // --- SCALABILITY TOOLS ---

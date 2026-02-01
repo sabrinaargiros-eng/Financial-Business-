@@ -10,3 +10,4 @@ Prompt 1: Architettura e Logiche Funzionali (Il "Cervello" dell'App)
 6. Strumenti di Scalabilità:
     ◦ Calcolatore Profitto Teorico: Inserendo il costo di un pacco all'ingrosso (es. €1,99 per 6 patatine) e i pezzi, l'app deve calcolare il profitto potenziale basandosi sui tuoi prezzi fissi (€0,50 dolci, €1,00 patatine).
     ◦ Esportazione Report: Pulsante per generare un PDF settimanale con statistiche di profitto e performance del team."
+    
