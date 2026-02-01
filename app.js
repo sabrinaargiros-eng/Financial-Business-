@@ -17,6 +17,10 @@ const database = firebase.database();
 const DB = {
     get: (key, defaultVal) => JSON.parse(localStorage.getItem(key)) || defaultVal,
     set: (key, val) => {
+        // Prevent saving if data is identical (optimization)
+        const localVal = JSON.parse(localStorage.getItem(key));
+        if (JSON.stringify(val) === JSON.stringify(localVal)) return;
+
         localStorage.setItem(key, JSON.stringify(val));
         // Sync to cloud
         database.ref('data/' + key).set(val);
@@ -34,11 +38,16 @@ function initSync() {
     keys.forEach(key => {
         database.ref('data/' + key).on('value', (snapshot) => {
             const val = snapshot.val();
-            if (val) {
-                localStorage.setItem(key, JSON.stringify(val));
-                // Update local variables via a generic logic or specific re-renders
-                updateLocalState(key, val);
-            }
+
+            // Check if remote data is actually different from local to avoid feedback loops
+            const localVal = JSON.parse(localStorage.getItem(key));
+            if (JSON.stringify(val) === JSON.stringify(localVal)) return;
+
+            // Handle null (deleted all items) vs legitimate data
+            const finalVal = val === null ? [] : val;
+
+            localStorage.setItem(key, JSON.stringify(finalVal));
+            updateLocalState(key, finalVal);
         });
     });
 }
