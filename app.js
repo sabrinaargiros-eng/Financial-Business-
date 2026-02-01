@@ -1,10 +1,64 @@
-// --- DATA STORE (LocalStorage Wrapper) ---
-const DB = {
-    get: (key, defaultVal) => JSON.parse(localStorage.getItem(key)) || defaultVal,
-    set: (key, val) => localStorage.setItem(key, JSON.stringify(val)),
+// --- FIREBASE CONFIGURATION ---
+const firebaseConfig = {
+    apiKey: "AIzaSyAtL58Aw6oIvoMIFpi_ObZrFNJEGQA9luU",
+    authDomain: "snackstock-app.firebaseapp.com",
+    projectId: "snackstock-app",
+    storageBucket: "snackstock-app.firebasestorage.app",
+    messagingSenderId: "544360978481",
+    appId: "1:544360978481:web:32714ef242d77518bb9d10",
+    databaseURL: "https://snackstock-app-default-rtdb.europe-west1.firebasedatabase.app/" // Derived from project ID
 };
 
-// --- INITIAL STATE ---
+// Initialize Firebase (Compat Mode)
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+// --- DATA STORE (Firebase + LocalStorage hybrid) ---
+const DB = {
+    get: (key, defaultVal) => JSON.parse(localStorage.getItem(key)) || defaultVal,
+    set: (key, val) => {
+        localStorage.setItem(key, JSON.stringify(val));
+        // Sync to cloud
+        database.ref('data/' + key).set(val);
+    },
+};
+
+// Listen for remote changes
+function initSync() {
+    const keys = ['products', 'team', 'subs', 'credits', 'transactions', 'inventoryHistory', 'teamTransactions'];
+    keys.forEach(key => {
+        database.ref('data/' + key).on('value', (snapshot) => {
+            const val = snapshot.val();
+            if (val) {
+                localStorage.setItem(key, JSON.stringify(val));
+                // Update local variables via a generic logic or specific re-renders
+                updateLocalState(key, val);
+            }
+        });
+    });
+}
+
+function updateLocalState(key, val) {
+    if (key === 'products') products = val;
+    if (key === 'team') team = val;
+    if (key === 'subs') subs = val;
+    if (key === 'credits') credits = val;
+    if (key === 'transactions') transactions = val;
+    if (key === 'inventoryHistory') inventoryHistory = val;
+    if (key === 'teamTransactions') teamTransactions = val;
+
+    // Trigger UI updates based on current view
+    const activeView = document.querySelector('.view-section.active');
+    if (!activeView) return;
+
+    if (activeView.id === 'view-home') renderDashboard();
+    if (activeView.id === 'view-inventory') renderInventory();
+    if (activeView.id === 'view-team') renderTeam();
+    if (activeView.id === 'view-subs') renderSubs();
+    if (activeView.id === 'view-credits') renderCredits();
+}
+
+initSync();
 const INITIAL_PRODUCTS = [
     { id: 'crostatina_ciocco', name: 'Crostatina Cioccolato', icon: '🍫', start: 20, restock: 0, sales: 0, type: 'sweet' },
     { id: 'crostatina_albicocca', name: 'Crostatina Albicocca', icon: '🍑', start: 20, restock: 0, sales: 0, type: 'sweet' },
