@@ -29,34 +29,51 @@ const DB = {
 
 // Listen for remote changes
 function initSync() {
-    // Connection state
+    // 1. Database URL check
+    if (!firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes('default-rtdb')) {
+        console.warn("Database URL might be incorrect. Please check your Firebase Console.");
+    }
+
+    // 2. Connection state
     database.ref('.info/connected').on('value', (snap) => {
         updateSyncStatus(snap.val() === true);
+    }, (error) => {
+        console.error("Sync Connection Error:", error);
+        updateSyncStatus(false);
     });
 
     const keys = ['products', 'team', 'subs', 'credits', 'transactions', 'inventoryHistory', 'teamTransactions'];
     keys.forEach(key => {
         database.ref('data/' + key).on('value', (snapshot) => {
             const val = snapshot.val();
-            const localVal = JSON.parse(localStorage.getItem(key));
+            const localRaw = localStorage.getItem(key);
+            const localVal = localRaw ? JSON.parse(localRaw) : null;
 
-            // FIRST SYNC / EMPTY CLOUD: If cloud is null, but we have local data, push local to cloud
+            // FIRST SYNC / EMPTY CLOUD: If cloud is null, try to push local data
             if (val === null) {
-                // If we have something in localVal (even just INITIAL data loaded previously), populate cloud
-                if (localVal && (Array.isArray(localVal) ? localVal.length > 0 : Object.keys(localVal).length > 0)) {
-                    database.ref('data/' + key).set(localVal);
+                // Determine if we have anything to push (either from localStorage or current in-memory variable)
+                let dataToPush = localVal;
+
+                // If localVal is null (first run ever), we use the variables which are initialized with defaults
+                if (!dataToPush || (Array.isArray(dataToPush) && dataToPush.length === 0)) {
+                    if (key === 'products') dataToPush = products;
+                    if (key === 'team') dataToPush = team;
+                    if (key === 'subs') dataToPush = subs;
+                    if (key === 'credits') dataToPush = credits;
+                }
+
+                if (dataToPush && (Array.isArray(dataToPush) ? dataToPush.length > 0 : true)) {
+                    console.log(`Pushing initial data for ${key} to cloud...`);
+                    database.ref('data/' + key).set(dataToPush);
                     return;
                 }
-                // If both are empty, just ensure it's an empty array locally for consistency
-                if (JSON.stringify(localVal) === '[]') return;
-                localStorage.setItem(key, JSON.stringify([]));
-                updateLocalState(key, []);
                 return;
             }
 
             // REGULAR UPDATE: Only update if remote is actually different from local
             if (JSON.stringify(val) === JSON.stringify(localVal)) return;
 
+            console.log(`Cloud update for ${key} received.`);
             localStorage.setItem(key, JSON.stringify(val));
             updateLocalState(key, val);
         });
