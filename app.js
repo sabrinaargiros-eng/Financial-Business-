@@ -6,7 +6,7 @@ const firebaseConfig = {
     storageBucket: "snackstock-app.firebasestorage.app",
     messagingSenderId: "544360978481",
     appId: "1:544360978481:web:32714ef242d77518bb9d10",
-    databaseURL: "https://snackstock-app-default-rtdb.firebaseio.com/" // Corrected based on console link
+    databaseURL: "https://snackstock-app-default-rtdb.europe-west1.firebasedatabase.app/" // Derived from project ID
 };
 
 // Initialize Firebase (Compat Mode)
@@ -17,10 +17,6 @@ const database = firebase.database();
 const DB = {
     get: (key, defaultVal) => JSON.parse(localStorage.getItem(key)) || defaultVal,
     set: (key, val) => {
-        // Prevent saving if data is identical (optimization)
-        const localVal = JSON.parse(localStorage.getItem(key));
-        if (JSON.stringify(val) === JSON.stringify(localVal)) return;
-
         localStorage.setItem(key, JSON.stringify(val));
         // Sync to cloud
         database.ref('data/' + key).set(val);
@@ -29,58 +25,22 @@ const DB = {
 
 // Listen for remote changes
 function initSync() {
-    // 1. Database URL check
-    if (!firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes('default-rtdb')) {
-        console.warn("Database URL might be incorrect. Please check your Firebase Console.");
-    }
-
-    // 2. Connection state
+    // Connection state
     database.ref('.info/connected').on('value', (snap) => {
         updateSyncStatus(snap.val() === true);
-    }, (error) => {
-        console.error("Sync Connection Error:", error);
-        updateSyncStatus(false);
     });
 
     const keys = ['products', 'team', 'subs', 'credits', 'transactions', 'inventoryHistory', 'teamTransactions'];
     keys.forEach(key => {
         database.ref('data/' + key).on('value', (snapshot) => {
             const val = snapshot.val();
-            const localRaw = localStorage.getItem(key);
-            const localVal = localRaw ? JSON.parse(localRaw) : null;
+            if (val) {
+                // Prevent infinite loops: only update if data is actually different
+                const currentLocal = localStorage.getItem(key);
+                if (currentLocal === JSON.stringify(val)) return;
 
-            // FIRST SYNC / EMPTY CLOUD: If cloud is null, try to push local data
-            if (val === null) {
-                // Determine if we have anything to push (either from localStorage or current in-memory variable)
-                let dataToPush = localVal;
-
-                // If localVal is null (first run ever), we use the variables which are initialized with defaults
-                if (!dataToPush || (Array.isArray(dataToPush) && dataToPush.length === 0)) {
-                    if (key === 'products') dataToPush = INITIAL_PRODUCTS;
-                    if (key === 'team') dataToPush = INITIAL_TEAM;
-                    if (key === 'subs') dataToPush = INITIAL_SUBS;
-                    if (key === 'credits') dataToPush = INITIAL_CREDITS;
-                }
-
-                if (dataToPush && (Array.isArray(dataToPush) ? dataToPush.length > 0 : true)) {
-                    console.log(`Pushing initial data for ${key} to cloud...`);
-                    database.ref('data/' + key).set(dataToPush);
-                    return;
-                }
-                return;
-            }
-
-            // REGULAR UPDATE: Only update if remote is actually different from local
-            if (JSON.stringify(val) === JSON.stringify(localVal)) return;
-
-            console.log(`Cloud update for ${key} received.`);
-            localStorage.setItem(key, JSON.stringify(val));
-            updateLocalState(key, val);
-        }, (error) => {
-            console.error(`Firebase Sync Error for ${key}:`, error);
-            if (error.message.includes('permission_denied') || error.code === 'PERMISSION_DENIED') {
-                console.warn("PERMESSI NEGATI: Assicurati di aver impostato 'Modalità Test' nelle Regole del Database su Firebase.");
-                alert("🔴 ERRORE FIREBASE: Permessi negati. Controlla le 'Rules' su Firebase e impostale su 'Modalità Test'.");
+                localStorage.setItem(key, JSON.stringify(val));
+                updateLocalState(key, val);
             }
         });
     });
@@ -157,13 +117,7 @@ function updateSyncStatus(connected) {
     const dot = document.getElementById('sync-indicator');
     if (dot) {
         dot.style.background = connected ? 'var(--color-profit)' : 'var(--color-expense)';
-        dot.title = connected ? 'Sincronizzato' : 'Offline o Errore Configurazione';
-        dot.style.boxShadow = connected ? '0 0 8px var(--color-profit)' : '0 0 8px var(--color-expense)';
-    }
-
-    // Inform user if it remains red
-    if (!connected) {
-        console.log("Tentativo di connessione...");
+        dot.title = connected ? 'Sincronizzato' : 'Offline';
     }
 }
 
@@ -208,6 +162,9 @@ if (teamTransactions.length === 0) {
 // Migration: Ensure all have IDs
 transactions = transactions.map(t => ({ ...t, id: t.id || Math.random().toString(36).substr(2, 9) }));
 DB.set('transactions', transactions);
+
+// Start Cloud Sync after all state is initialized
+initSync();
 
 // --- NAVIGATION ---
 function switchTab(tabName) {
@@ -1915,7 +1872,4 @@ document.addEventListener('DOMContentLoaded', () => {
     btnExp.innerText = '📄 Export PDF';
     btnExp.onclick = exportReport;
     document.getElementById('view-home').appendChild(btnExp);
-
-    // Start Sync after UI is ready
-    initSync();
 });
