@@ -25,6 +25,11 @@ const DB = {
 
 // Listen for remote changes
 function initSync() {
+    // Connection state
+    database.ref('.info/connected').on('value', (snap) => {
+        updateSyncStatus(snap.val() === true);
+    });
+
     const keys = ['products', 'team', 'subs', 'credits', 'transactions', 'inventoryHistory', 'teamTransactions'];
     keys.forEach(key => {
         database.ref('data/' + key).on('value', (snapshot) => {
@@ -102,6 +107,14 @@ const COLORS = ['#FFD700', '#FF4D4D', '#2ECC71', '#3498DB', '#9B59B6'];
 function hapticFeedback() {
     if (window.navigator.vibrate) {
         window.navigator.vibrate(15);
+    }
+}
+
+function updateSyncStatus(connected) {
+    const dot = document.getElementById('sync-indicator');
+    if (dot) {
+        dot.style.background = connected ? 'var(--color-profit)' : 'var(--color-expense)';
+        dot.title = connected ? 'Sincronizzato' : 'Offline';
     }
 }
 
