@@ -38,16 +38,27 @@ function initSync() {
     keys.forEach(key => {
         database.ref('data/' + key).on('value', (snapshot) => {
             const val = snapshot.val();
-
-            // Check if remote data is actually different from local to avoid feedback loops
             const localVal = JSON.parse(localStorage.getItem(key));
+
+            // FIRST SYNC / EMPTY CLOUD: If cloud is null, but we have local data, push local to cloud
+            if (val === null) {
+                // If we have something in localVal (even just INITIAL data loaded previously), populate cloud
+                if (localVal && (Array.isArray(localVal) ? localVal.length > 0 : Object.keys(localVal).length > 0)) {
+                    database.ref('data/' + key).set(localVal);
+                    return;
+                }
+                // If both are empty, just ensure it's an empty array locally for consistency
+                if (JSON.stringify(localVal) === '[]') return;
+                localStorage.setItem(key, JSON.stringify([]));
+                updateLocalState(key, []);
+                return;
+            }
+
+            // REGULAR UPDATE: Only update if remote is actually different from local
             if (JSON.stringify(val) === JSON.stringify(localVal)) return;
 
-            // Handle null (deleted all items) vs legitimate data
-            const finalVal = val === null ? [] : val;
-
-            localStorage.setItem(key, JSON.stringify(finalVal));
-            updateLocalState(key, finalVal);
+            localStorage.setItem(key, JSON.stringify(val));
+            updateLocalState(key, val);
         });
     });
 }
